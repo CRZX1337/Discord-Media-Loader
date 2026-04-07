@@ -19,6 +19,7 @@ logger = logging.getLogger("MediaBot.Main")
 # --- CUSTOM MODULES ---
 from config import CONFIG
 from ui import DashboardView, SupportInformationEmbed
+import ui
 import downloader
 from constants import BOT_NAME
 
@@ -79,6 +80,13 @@ class MediaBot(commands.Bot):
                 except Exception as e:
                     logger.error(f"Failed to delete {file_path}: {e}")
         logger.info(f"Cleanup finished. Deleted {count} files.")
+
+        # Clean up expired cooldown entries
+        now = time.time()
+        expired = [uid for uid, t in ui._user_cooldowns.items() if now - t > 30]
+        for uid in expired:
+            del ui._user_cooldowns[uid]
+        logger.info(f"Cleared {len(expired)} expired cooldown entries.")
 
     @status_rotation.before_loop
     async def before_status_rotation(self):
