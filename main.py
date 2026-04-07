@@ -4,6 +4,7 @@ import os
 import aiohttp
 from aiohttp import web
 from discord.ext import commands, tasks
+import re
 from dotenv import load_dotenv
 
 # --- CUSTOM MODULES ---
@@ -113,7 +114,6 @@ class MediaBot(commands.Bot):
 
         # Check for media links in the designated channel
         if message.channel.id == CONFIG['CHANNEL_ID']:
-            import re
             if re.search(CONFIG['LINK_REGEX'], message.content):
                 # Send the dashboard as a reply to the link message
                 view = DashboardView(url=message.content, trigger_message_id=message.id)
