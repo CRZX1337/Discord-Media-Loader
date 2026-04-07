@@ -15,7 +15,7 @@ try:
 except Exception:
     CONFIG = {"BASE_URL": "http://localhost:8080"}
 
-async def start_analysis(interaction: discord.Interaction, url: str, format_requested: str, trigger_message_id: int = None):
+async def start_analysis(interaction: discord.Interaction, url: str, format_requested: str, trigger_message_id: int = None, prompt_message_id: int = None):
     """Core logic to analyze a link and present the next selection view."""
     if not interaction.response.is_done():
         await interaction.response.send_message("🔍 **Analyzing content...** Please wait.", ephemeral=True)
@@ -31,21 +31,22 @@ async def start_analysis(interaction: discord.Interaction, url: str, format_requ
     title_short = info['title'][:50] + "..." if len(info['title']) > 50 else info['title']
     
     if format_requested == "video":
-        view = QualitySelectView(url, info['heights'], trigger_message_id)
+        view = QualitySelectView(url, info['heights'], trigger_message_id, prompt_message_id)
         await interaction.edit_original_response(content=f"🎬 **Found:** *{title_short}*\nSelect Your Video Quality:", view=view)
     elif format_requested == "audio":
-        view = AudioFormatView(url, trigger_message_id)
+        view = AudioFormatView(url, trigger_message_id, prompt_message_id)
         await interaction.edit_original_response(content=f"🎵 **Found:** *{title_short}*\nSelect Audio Format:", view=view)
     elif format_requested == "picture":
-        view = PictureFormatView(url, trigger_message_id)
+        view = PictureFormatView(url, trigger_message_id, prompt_message_id)
         await interaction.edit_original_response(content=f"🖼️ **Found:** *{title_short}*\nSelect Image Format:", view=view)
 
 class QualitySelectView(discord.ui.View):
     """Dynamic quality selection for Videos."""
-    def __init__(self, url: str, heights: list, trigger_message_id: int = None):
+    def __init__(self, url: str, heights: list, trigger_message_id: int = None, prompt_message_id: int = None):
         super().__init__(timeout=180)
         self.url = url
         self.trigger_message_id = trigger_message_id
+        self.prompt_message_id = prompt_message_id
         
         options = []
         standard_heights = [360, 480, 720, 1080, 1440, 2160]
@@ -69,14 +70,15 @@ class QualitySelectView(discord.ui.View):
 
     async def on_select(self, interaction: discord.Interaction):
         quality = interaction.data['values'][0]
-        await process_action(interaction, self.url, "video", quality=quality, trigger_message_id=self.trigger_message_id)
+        await process_action(interaction, self.url, "video", quality=quality, trigger_message_id=self.trigger_message_id, prompt_message_id=self.prompt_message_id)
 
 class AudioFormatView(discord.ui.View):
     """Format selection for Audio."""
-    def __init__(self, url: str, trigger_message_id: int = None):
+    def __init__(self, url: str, trigger_message_id: int = None, prompt_message_id: int = None):
         super().__init__(timeout=180)
         self.url = url
         self.trigger_message_id = trigger_message_id
+        self.prompt_message_id = prompt_message_id
 
     @discord.ui.select(
         placeholder="Choose audio format...",
@@ -88,14 +90,15 @@ class AudioFormatView(discord.ui.View):
         ]
     )
     async def select_format(self, interaction: discord.Interaction, select: discord.ui.Select):
-        await process_action(interaction, self.url, "audio", extension=select.values[0], trigger_message_id=self.trigger_message_id)
+        await process_action(interaction, self.url, "audio", extension=select.values[0], trigger_message_id=self.trigger_message_id, prompt_message_id=self.prompt_message_id)
 
 class PictureFormatView(discord.ui.View):
     """Format selection for Pictures."""
-    def __init__(self, url: str, trigger_message_id: int = None):
+    def __init__(self, url: str, trigger_message_id: int = None, prompt_message_id: int = None):
         super().__init__(timeout=180)
         self.url = url
         self.trigger_message_id = trigger_message_id
+        self.prompt_message_id = prompt_message_id
 
     @discord.ui.select(
         placeholder="Choose image format...",
@@ -106,9 +109,9 @@ class PictureFormatView(discord.ui.View):
         ]
     )
     async def select_format(self, interaction: discord.Interaction, select: discord.ui.Select):
-        await process_action(interaction, self.url, "picture", extension=select.values[0], trigger_message_id=self.trigger_message_id)
+        await process_action(interaction, self.url, "picture", extension=select.values[0], trigger_message_id=self.trigger_message_id, prompt_message_id=self.prompt_message_id)
 
-async def process_action(interaction: discord.Interaction, url: str, format_type: str, quality: str = "1080", extension: str = None, trigger_message_id: int = None):
+async def process_action(interaction: discord.Interaction, url: str, format_type: str, quality: str = "1080", extension: str = None, trigger_message_id: int = None, prompt_message_id: int = None):
     """Global processor for the final download stage."""
     embed = discord.Embed(
         title="📥 Fetchy | Working...",
@@ -168,6 +171,15 @@ async def process_action(interaction: discord.Interaction, url: str, format_type
             except Exception as e:
                 logger.warning(f"Failed to delete trigger message: {e}")
 
+        # CLEANUP: Delete the bot's prompt message as well
+        if prompt_message_id:
+            try:
+                p_msg = await interaction.channel.fetch_message(prompt_message_id)
+                await p_msg.delete()
+                logger.info(f"Prompt message {prompt_message_id} deleted successfully.")
+            except Exception as e:
+                logger.warning(f"Failed to delete prompt message: {e}")
+
     except Exception as e:
         logger.error(f"Download error: {e}")
         embed.title = "❌ Error"
@@ -202,20 +214,20 @@ class DashboardView(discord.ui.View):
     @discord.ui.button(label="🎥 Video", style=discord.ButtonStyle.primary, custom_id="fetchy_video")
     async def video(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.url:
-            await start_analysis(interaction, self.url, "video", self.trigger_message_id)
+            await start_analysis(interaction, self.url, "video", self.trigger_message_id, interaction.message.id)
         else:
             await interaction.response.send_modal(DownloadModal("video"))
 
     @discord.ui.button(label="🎵 Audio", style=discord.ButtonStyle.success, custom_id="fetchy_audio")
     async def audio(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.url:
-            await start_analysis(interaction, self.url, "audio", self.trigger_message_id)
+            await start_analysis(interaction, self.url, "audio", self.trigger_message_id, interaction.message.id)
         else:
             await interaction.response.send_modal(DownloadModal("audio"))
 
     @discord.ui.button(label="🖼️ Picture", style=discord.ButtonStyle.secondary, custom_id="fetchy_picture")
     async def picture(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.url:
-            await start_analysis(interaction, self.url, "picture", self.trigger_message_id)
+            await start_analysis(interaction, self.url, "picture", self.trigger_message_id, interaction.message.id)
         else:
             await interaction.response.send_modal(DownloadModal("picture"))
