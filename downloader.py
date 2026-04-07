@@ -15,6 +15,8 @@ def get_media_info(url):
         'quiet': True,
         'no_warnings': True,
     }
+    if os.path.exists("cookies.txt"):
+        ydl_opts['cookiefile'] = 'cookies.txt'
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -69,6 +71,8 @@ def download_media(url, format_type, quality="1080", extension="mp3", status_hoo
         'outtmpl': output_tpl,
         'progress_hooks': [progress_handler],
     }
+    if os.path.exists("cookies.txt"):
+        ydl_opts['cookiefile'] = 'cookies.txt'
 
     if format_type == "video":
         # Select best quality up to the requested one
