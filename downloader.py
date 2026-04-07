@@ -146,7 +146,8 @@ def get_instagram_carousel(url):
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
-        'extract_flat': False, # We need entries info
+        'extract_flat': False,
+        'skip_download': True,
         'ignore_no_formats_error': True
     }
     if os.path.exists("cookies.txt"):
@@ -155,14 +156,19 @@ def get_instagram_carousel(url):
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
+            if not info:
+                return []
             
-            entries = []
             title = info.get('title', 'Instagram Photo')
-
-            # yt-dlp returns carousels as a playlist
-            if info.get('_type') == 'playlist' or 'entries' in info:
-                for i, entry in enumerate(info.get('entries', []), 1):
-                    img_url = entry.get('url') or entry.get('thumbnail')
+            entries = []
+            
+            raw_entries = info.get('entries', [])
+            if raw_entries:
+                for i, entry in enumerate(raw_entries, 1):
+                    # Get best thumbnail: last item in 'thumbnails' or fallback to 'thumbnail'/'url'
+                    thumbnails = entry.get('thumbnails', [])
+                    img_url = thumbnails[-1].get('url') if thumbnails else (entry.get('thumbnail') or entry.get('url'))
+                    
                     if img_url:
                         entries.append({
                             'index': i,
@@ -170,8 +176,10 @@ def get_instagram_carousel(url):
                             'title': title
                         })
             else:
-                # Single photo
-                img_url = info.get('url') or info.get('thumbnail')
+                # Single photo logic
+                thumbnails = info.get('thumbnails', [])
+                img_url = thumbnails[-1].get('url') if thumbnails else info.get('thumbnail')
+                
                 if img_url:
                     entries.append({
                         'index': 1,
@@ -179,6 +187,7 @@ def get_instagram_carousel(url):
                         'title': title
                     })
             
+            logger.info(f"Found {len(entries)} entries for Instagram post.")
             return entries
     except Exception as e:
         logger.error(f"get_instagram_carousel failed: {e}")
