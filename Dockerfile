@@ -1,20 +1,20 @@
-# Verwende ein leichtgewichtiges Python-Image
+# Use a lightweight Python image
 FROM python:3.11-slim
 
-# Installiere FFmpeg (zwingend erforderlich für yt-dlp Video/Audio Merging)
+# Install FFmpeg (mandatory for yt-dlp Video/Audio Merging)
 RUN apt-get update && \
     apt-get install -y ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
-# Setze das Arbeitsverzeichnis
+# Set the working directory
 WORKDIR /app
 
-# Kopiere die requirements und installiere Abhängigkeiten (Layer-Caching)
+# Copy the requirements and install dependencies (Layer Caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Kopiere den restlichen Code
+# Copy the rest of the source code
 COPY downloader.py ui.py main.py ./
 
-# Führe den Bot aus
+# Start up the Bot
 CMD ["python", "main.py"]

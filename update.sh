@@ -1,17 +1,17 @@
 #!/bin/bash
 
-echo "🚀 Starte Bot-Update..."
+echo "🚀 Starting Bot Update..."
 
-# 1. Neuesten Code von GitHub ziehen
-echo "📥 Lade neueste Version herunter..."
+# 1. Pull latest code from GitHub
+echo "📥 Pulling the latest version from the repository..."
 git pull
 
-# 2. Docker Images komplett frisch aufbauen (ohne Cache)
-echo "🏗️ Baue Docker Container neu auf..."
+# 2. Build Docker images completely fresh (no cache)
+echo "🏗️ Rebuilding Docker containers..."
 sudo docker compose build --no-cache
 
-# 3. Docker Container im Hintergrund starten/updaten
-echo "🟢 Starte den Bot..."
+# 3. Start/Update the Docker container in the background
+echo "🟢 Starting up the Bot..."
 sudo docker compose up -d
 
-echo "✅ Update erfolgreich abgeschlossen! Der Bot sollte jetzt auf der aktuellsten Version laufen."
+echo "✅ Update completed successfully! The bot is now running the latest version! 🎉"

@@ -6,5 +6,5 @@ services:
     env_file:
       - .env
     volumes:
-      # Speichere die Downloads persistent im Ordner auf dem Host-System (falls mal nicht aufgeräumt wird)
+      # Save downloads persistently in a hosted folder (in case OS cleanup skips a beat)
       - ./downloads:/app/downloads

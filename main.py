@@ -4,7 +4,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 
-# Importiere unsere saubere UI Architektur
+# Import our clean UI architecture
 from ui import DashboardView
 
 load_dotenv()
@@ -20,55 +20,55 @@ class MediaBot(commands.Bot):
         super().__init__(command_prefix="!", intents=discord.Intents.default())
 
     async def setup_hook(self):
-        # 1. Zwingend für die Erhaltung der Button-Funktionalität nach Bot-Neustarts:
+        # 1. Essential for keeping button functionality after bot restarts:
         self.add_view(DashboardView())
         
-        # Synchronisiere (bzw. lösche) Slash-Commands, falls alte gelistet sind
+        # Synchronize (or clear) old slash commands
         await self.tree.sync()
-        logger.info("Bot Setup abgeschlossen, Dashboard View registriert.")
+        logger.info("Bot setup complete. Dashboard View registered successfully.")
 
     async def on_ready(self):
-        logger.info(f"Bot ist online als {self.user} (ID: {self.user.id})")
+        logger.info(f"Bot is online as {self.user} (ID: {self.user.id})")
         
-        # 2. Setup des dedizierten Dashboard Channels
+        # 2. Setup the dedicated Dashboard Channel
         channel = self.get_channel(CHANNEL_ID)
         if channel:
-            # Purge löscht alte Nachrichten vollständig aus dem Channel
+            # Purge clears old messages entirely from the channel
             try:
                 await channel.purge(limit=100)
-                logger.info(f"Kanal {CHANNEL_ID} wurde komplett bereinigt (purged).")
+                logger.info(f"Channel {CHANNEL_ID} was successfully purged.")
             except discord.Forbidden:
-                logger.error("Keine Rechte vorhanden, um Nachrichten in diesem Channel zu löschen.")
+                logger.error("Missing permissions to delete messages in this channel.")
             except Exception as e:
-                logger.error(f"Fehler beim Purgen des Channels: {e}")
+                logger.error(f"Error purging the channel: {e}")
                 
-            # Permanentes Dashboard Setup
+            # Permanent Dashboard Setup
             dash_embed = discord.Embed(
                 title="📥 Media Downloader Dashboard",
                 description=(
-                    "Willkommen am Kontrollzentrum!\n\n"
-                    "Hier bleibt alles für immer 100% anonym und sauber. Klicke einfach auf einen der "
-                    "**drei Buttons unten**, um das gewünschte Format (Video, Audio oder Thumbnail) "
-                    "zu wählen und füge dann deine Video-URL ein.\n\n"
-                    "*(Deine Downloads laden kollisionsfrei im Hintergrund und werden dir komplett unsichtbar (ephemeral) zurückgesendet!)*"
+                    "Hey there! Welcome to your personal media control center! ✨\n\n"
+                    "Everything here stays 100% anonymous and clean. Just click on one of the "
+                    "**three buttons below** to pick your format (Video, Audio, or Picture) "
+                    "and drop your link in.\n\n"
+                    "*(Hang tight! I'll grab that for you safely in the background and send it back to you privately! 🚀)*"
                 ),
                 color=discord.Color.blurple()
             )
-            dash_embed.set_footer(text="Vollautomatisiert, Clean & Modular")
+            dash_embed.set_footer(text="Fully Automated, Clean & Modular")
             
-            # Sende das View/Embed zurück in den gesäuberten Channel
+            # Send the View/Embed back into the cleaned channel
             await channel.send(embed=dash_embed, view=DashboardView())
-            logger.info("Dashboard erfolgreich in den Kanal gepostet.")
+            logger.info("Dashboard successfully posted to the channel.")
         else:
-            logger.error(f"FEHLER: Channel mit der ID {CHANNEL_ID} wurde auf dem Server nicht gefunden!")
+            logger.error(f"ERROR: Channel with ID {CHANNEL_ID} was not found on this server!")
             
-        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="dem Dashboard zu"))
+        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="over the Dashboard ✨"))
 
 # --- BOT ENTRYPOINT ---
 if __name__ == "__main__":
     TOKEN = os.getenv("DISCORD_BOT_TOKEN")
     if not TOKEN:
-        logger.error("Kein Token gefunden! Bitte DISCORD_BOT_TOKEN prüfen.")
+        logger.error("No token found! Please check your DISCORD_BOT_TOKEN.")
     else:
         bot = MediaBot()
         bot.run(TOKEN)

@@ -1,71 +1,72 @@
 # 📥 Discord Media Downloader Bot
 
-Ein performanter, moderner Discord-Bot zum Herunterladen von Videos, Audio und Thumbnails über `yt-dlp`. 
+A high-performance, modern Discord bot for downloading Videos, Audio, and Pictures using `yt-dlp`. 
 
 ## ✨ Features
-- 🎬 **Video:** MP4-Format mit bestmöglicher Qualität (gemerged Video + Audio).
-- 🎵 **Audio:** Extraktion in MP3.
-- 🖼️ **Thumbnails:** Extrahieren und Speichern von Vorschaubildern (als PNG).
-- ⚡ **Non-Blocking:** Der Bot friert während langer Downloads nicht ein.
-- 🧹 **Auto-Cleanup:** Automatisierte lokale Dateiverwaltung, um Speicher zu sparen.
-- 📱 **Modern UI:** Volle Steuerung über interaktive Slash-Commands und Dropdown-Menüs.
+- 🎬 **Video:** MP4 format in the highest possible quality (merged Video + Audio).
+- 🎵 **Audio:** Extracted straight to MP3.
+- 🖼️ **Pictures:** Extracts and saves media preview pictures (as PNG).
+- ⚡ **Non-Blocking:** The bot stays responsive during long downloads.
+- 🧹 **Auto-Cleanup:** Automated local file management to save disk space.
+- 📱 **Modern UI:** Full control over interactive Slash-Commands and slick UI dropdowns/buttons.
 
 ---
 
-## 🚀 Deployment auf Ubuntu (Docker) - Empfohlen!
+## 🚀 Deployment on Ubuntu (Docker) - Recommended!
 
-Die absolut beste und wartungsfreieste Methode, diesen Bot auf einem Server zu betreiben, ist **Docker**. Dadurch packst du Python und zwingende Betriebssystem-Pakete wie `ffmpeg` in einen sauberen Container ("Works on my machine"-Prinzip).
+The absolute best and lowest-maintenance way to run this bot is via **Docker**. This packages Python and required system dependencies like `ffmpeg` into a clean container ("Works on my machine" principle).
 
-### Voraussetzungen
-Dein Server benötigt **Docker** und **Docker Compose**.
-Auf einem frischen Ubuntu-Server installierst du beides so:
+### Prerequisites
+Your server requires **Docker** and **Docker Compose**.
+On a fresh Ubuntu setup, install them like this:
 ```bash
 sudo apt update
 sudo apt install docker.io docker-compose -y
 ```
 
 ### 1. Installation
-1. Klone das von dir auf GitHub hochgeladene Repository auf den Server:
+1. Clone your GitHub repository onto your server:
    ```bash
-   git clone <DEINE_GITHUB_REPO_URL>
+   git clone <YOUR_GITHUB_REPO_URL>
    cd discord-downloader-bot
    ```
-2. Kopiere die Beispiel-Umgebungsdatei:
+2. Copy the boilerplate environment file:
    ```bash
    cp .env.example .env
    ```
-3. Trag deinen Bot Token in die soeben erstellte Datei ein:
+3. Type your Bot Token into the newly created file:
    ```bash
    nano .env
-   # DISCORD_BOT_TOKEN einfügen und speichern via STRG+O -> STRG+X
+   # Insert DISCORD_BOT_TOKEN and save via CTRL+O -> Enter -> CTRL+X
    ```
 
-### 2. Starten
-Führe diesen Befehl aus, um den Bot im Hintergrund des Servers hochzufahren:
+### 2. Startup
+Run this command to boot the bot gracefully in the background:
 ```bash
 sudo docker-compose up -d --build
 ```
+*(Alternatively, just run `./update.sh`!)*
 
-### 3. Log-Ausgabe prüfen
-Um zu sehen ob der Bot online ist oder gerade etwas herunterlädt:
+### 3. Check Logs
+To see if the bot is online or actively downloading stuff:
 ```bash
 sudo docker-compose logs -f
 ```
 
 ---
 
-## 💻 Lokale Entwicklung
+## 💻 Local Development
 
-Falls du keinen Docker nutzt und das Ganze manuell starten willst:
+If you prefer avoiding Docker for local tests:
 
-1. Installiere **Python 3.10+** und zwingend **FFmpeg** auf deinem Rechner.
-2. Füge den FFmpeg `bin`-Ordner deinen Umgebungsvariablen (System Path) hinzu.
-3. Installiere alle benötigten Pakete:
+1. Install **Python 3.10+** and mandatory **FFmpeg** on your machine.
+2. Add the FFmpeg `bin` folder to your system's Environment Variables (System Path).
+3. Install all required packages:
    ```bash
    pip install -r requirements.txt
    ```
-4. Lege eine `.env` Datei an (oder kopier `.env.example`) und befülle `DISCORD_BOT_TOKEN`.
-5. Starte den Bot:
+4. Create a `.env` file (or copy `.env.example`) and supply your `DISCORD_BOT_TOKEN`.
+5. Run your bot smoothly:
    ```bash
-   python bot.py
+   python main.py
    ```
