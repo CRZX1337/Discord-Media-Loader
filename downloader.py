@@ -192,25 +192,27 @@ def get_instagram_carousel(url):
                     item_url = f"https://www.instagram.com/p/{post_id}/?img_index={i}"
                     logger.info(f"Resolving img_index {i}: {item_url}")
                     try:
-                        item_info = ydl.extract_info(item_url, download=False)
-                        logger.info(f"item_info keys: {list(item_info.keys()) if item_info else 'None'} | thumbnails={len(item_info.get('thumbnails', []))} | thumbnail={item_info.get('thumbnail')} | url={item_info.get('url')}")
+                        item_info = ydl.extract_info(item_url, download=False) 
+                        logger.info(f"_type={item_info.get('_type')} | has entries={('entries' in item_info)} | entries count={len(item_info.get('entries') or [])}") 
                         
-                        # If yt-dlp returns a playlist wrapper, dig into the first entry 
-                        if item_info.get('_type') == 'playlist' or 'entries' in item_info: 
-                            sub_entries = item_info.get('entries') or [] 
-                            if sub_entries: 
-                                item_info = sub_entries[0] 
+                        # Dig into entries if present 
+                        actual_info = item_info 
+                        if 'entries' in item_info: 
+                            sub = list(item_info.get('entries') or []) 
+                            logger.info(f"sub entries count={len(sub)} | first sub keys={list(sub[0].keys()) if sub else 'empty'}") 
+                            if sub: 
+                                actual_info = sub[0] 
+                                # If still lazy, resolve it 
+                                if '__post_extractor' in actual_info: 
+                                    logger.warning(f"Entry {i} is lazy (__post_extractor), needs full extraction") 
+                                logger.info(f"actual_info thumbnails={len(actual_info.get('thumbnails', []))} | thumbnail={actual_info.get('thumbnail')} | url={actual_info.get('url')} | formats={len(actual_info.get('formats', []))}") 
                         
-                        thumbnails = item_info.get('thumbnails', [])
-                        img_url = thumbnails[-1].get('url') if thumbnails else (item_info.get('thumbnail') or item_info.get('url'))
-                        if not img_url:
-                            logger.warning(f"No image URL found for index {i}")
-                        if img_url:
-                            entries.append({
-                                'index': i,
-                                'url': img_url,
-                                'title': title
-                            })
+                        thumbnails = actual_info.get('thumbnails', []) 
+                        img_url = thumbnails[-1].get('url') if thumbnails else (actual_info.get('thumbnail') or actual_info.get('url')) 
+                        if not img_url: 
+                            logger.warning(f"No image URL found for index {i}") 
+                            continue 
+                        entries.append({'index': i, 'url': img_url, 'title': title})
                     except Exception as e:
                         logger.error(f"Failed to extract img_index {i}: {e}")
             else:
