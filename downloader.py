@@ -139,10 +139,13 @@ def download_media(url, format_type, quality="1080", extension="mp3", status_hoo
 
 def get_instagram_carousel(url):
     """
-    Extracts carousel entries (multi-photo) from an Instagram post.
+    Extracts carousel entries (multi-photo) from an Instagram post by resolving individual img_index URLs.
     Returns a list of dicts: [{'index': 1, 'url': '...', 'title': '...'}, ...]
     """
     logger.info(f"Extracting Instagram carousel for {url}")
+    
+    # Step 1: Strip img_index and get base info
+    base_url = re.sub(r'[\?&]img_index=\d+', '', url)
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
@@ -153,38 +156,48 @@ def get_instagram_carousel(url):
     if os.path.exists("cookies.txt"):
         ydl_opts['cookiefile'] = 'cookies.txt'
 
+    entries = []
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
+            info = ydl.extract_info(base_url, download=False)
             if not info:
                 return []
             
-            logger.info(f"Raw entries: {info.get('entries', [])}")
-            logger.info(f"First entry sample: {info.get('entries', [None])[0]}")
-            for entry in info.get('entries', []):
-                logger.info(f"Entry keys: {entry.keys()} | url: {entry.get('url')} | thumbnail: {entry.get('thumbnail')} | thumbnails: {len(entry.get('thumbnails', []))}")
-
-            title = info.get('title', 'Instagram Photo')
-            entries = []
+            # Step 2: Extract post ID and build base URL
+            post_id = info.get('id') or info.get('playlist_id')
+            if not post_id and "/p/" in base_url:
+                post_id = base_url.split("/p/")[1].split("/")[0]
             
-            raw_entries = info.get('entries', [])
-            if raw_entries:
-                for i, entry in enumerate(raw_entries, 1):
-                    # Get best thumbnail: last item in 'thumbnails' or fallback to 'thumbnail'/'url'
-                    thumbnails = entry.get('thumbnails', [])
-                    img_url = thumbnails[-1].get('url') if thumbnails else (entry.get('thumbnail') or entry.get('url'))
-                    
-                    if img_url:
-                        entries.append({
-                            'index': i,
-                            'url': img_url,
-                            'title': title
-                        })
+            if not post_id:
+                return []
+
+            n_entries = info.get('n_entries') or 0
+            title = info.get('title', 'Instagram Photo')
+
+            # Step 3 & 4: Resolve individual images
+            if n_entries > 0:
+                # Update options for individual resolution
+                ydl.params['extract_flat'] = False
+                for i in range(1, n_entries + 1):
+                    item_url = f"https://www.instagram.com/p/{post_id}/?img_index={i}"
+                    try:
+                        item_info = ydl.extract_info(item_url, download=False)
+                        thumbnails = item_info.get('thumbnails', [])
+                        img_url = thumbnails[-1].get('url') if thumbnails else (item_info.get('thumbnail') or item_info.get('url'))
+                        if img_url:
+                            entries.append({
+                                'index': i,
+                                'url': img_url,
+                                'title': title
+                            })
+                    except Exception as e:
+                        logger.error(f"Failed to extract img_index {i}: {e}")
             else:
                 # Single photo logic
-                thumbnails = info.get('thumbnails', [])
-                img_url = thumbnails[-1].get('url') if thumbnails else info.get('thumbnail')
-                
+                ydl.params['extract_flat'] = False
+                item_info = ydl.extract_info(base_url, download=False)
+                thumbnails = item_info.get('thumbnails', [])
+                img_url = thumbnails[-1].get('url') if thumbnails else (item_info.get('thumbnail') or item_info.get('url'))
                 if img_url:
                     entries.append({
                         'index': 1,
@@ -215,7 +228,8 @@ async def download_instagram_photo(url, index=None):
     if not os.path.exists("downloads"):
         os.makedirs("downloads")
 
-    async with aiohttp.ClientSession() as session:
+    headers = {'Referer': 'https://www.instagram.com/'}
+    async with aiohttp.ClientSession(headers=headers) as session:
         for entry in to_download:
             try:
                 # Sanitize title
