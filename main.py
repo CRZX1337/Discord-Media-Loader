@@ -50,7 +50,8 @@ class MediaBot(commands.Bot):
                     "Everything here stays 100% anonymous and clean. Just click on one of the "
                     "**three buttons below** to pick your format (Video, Audio, or Picture) "
                     "and drop your link in.\n\n"
-                    "*(Hang tight! I'll grab that for you safely in the background and send it back to you privately! 🚀)*"
+                    "*(Hang tight! I'll grab that for you safely in the background and send it back to you privately! 🚀)*\n\n"
+                    "⭐ **Love this bot?** Check us out on [GitHub](https://github.com/CRZX1337/Discord-Media-Loader/)!"
                 ),
                 color=discord.Color.blurple()
             )

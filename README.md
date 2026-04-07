@@ -25,10 +25,10 @@ sudo apt install docker.io docker-compose -y
 ```
 
 ### 1. Installation
-1. Clone your GitHub repository onto your server:
+1. Clone the repository to your server:
    ```bash
-   git clone <YOUR_GITHUB_REPO_URL>
-   cd discord-downloader-bot
+   git clone https://github.com/CRZX1337/Discord-Media-Loader/
+   cd Discord-Media-Loader
    ```
 2. Copy the boilerplate environment file:
    ```bash

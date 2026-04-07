@@ -46,7 +46,7 @@ class DownloadModal(discord.ui.Modal):
                 await interaction.edit_original_response(embed=embed, attachments=[])
             else:
                 embed.title = "✅ All done!"
-                embed.description = f"Here is your file, freshly baked! 🍪"
+                embed.description = f"Here is your file, freshly baked! 🍪\n\n*Liked it? Give us a star on [GitHub](https://github.com/CRZX1337/Discord-Media-Loader/)*"
                 embed.color = discord.Color.green()
                 
                 # Post file to the Interaction webhook
