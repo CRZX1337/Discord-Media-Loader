@@ -2,6 +2,7 @@ import discord
 import logging
 import os
 import aiohttp
+import time
 from aiohttp import web
 from discord.ext import commands, tasks
 import re
@@ -66,8 +67,9 @@ class MediaBot(commands.Bot):
                 file_path = os.path.join("downloads", filename)
                 try:
                     if os.path.isfile(file_path):
-                        os.remove(file_path)
-                        count += 1
+                        if time.time() - os.path.getmtime(file_path) > 86400:
+                            os.remove(file_path)
+                            count += 1
                 except Exception as e:
                     logger.error(f"Failed to delete {file_path}: {e}")
         logger.info(f"Cleanup finished. Deleted {count} files.")
