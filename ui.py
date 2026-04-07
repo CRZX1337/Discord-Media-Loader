@@ -236,15 +236,32 @@ async def process_action(interaction: discord.Interaction, url: str, format_type
         # 2. RUN DOWNLOAD with status hook
         loop = asyncio.get_running_loop()
         
-        async def update_status_ui(phase):
-            mapping = {
-                "SEARCHING": "🔍 Locating media...",
-                "DOWNLOADING": "📥 Downloading data...",
-                "PROCESSING": "⚙️ Processing file..."
-            }
-            embed.description = mapping.get(phase, "Working...")
-            await interaction.edit_original_response(embed=embed)
-            
+        async def update_status_ui(payload):
+            if isinstance(payload, dict):
+                phase = payload.get("phase", "")
+                if phase == "DOWNLOADING":
+                    pct = payload.get("percent", 0)
+                    dl = payload.get("downloaded_mb", 0)
+                    total = payload.get("total_mb", 0)
+                    spd = payload.get("speed_mb", 0)
+                    bar_filled = int(pct / 10)
+                    bar = "█" * bar_filled + "░" * (10 - bar_filled)
+                    size_str = f"{dl} / {total} MB" if total > 0 else f"{dl} MB"
+                    speed_str = f" · {spd} MB/s" if spd > 0 else ""
+                    embed.description = f"⬇️ `[{bar}]` **{pct}%**\n{size_str}{speed_str}"
+                elif phase == "PROCESSING":
+                    embed.description = "⚙️ Processing file..."
+            else:
+                mapping = {
+                    "SEARCHING": "🔍 Locating media...",
+                    "PROCESSING": "⚙️ Processing file...",
+                }
+                embed.description = mapping.get(payload, "Working...")
+            try:
+                await interaction.edit_original_response(embed=embed)
+            except Exception:
+                pass
+
         def status_callback(status):
             asyncio.run_coroutine_threadsafe(update_status_ui(status), loop)
 

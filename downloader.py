@@ -4,6 +4,7 @@ import uuid
 import logging
 import hashlib
 import re
+import time
 import aiohttp
 import instaloader
 
@@ -51,14 +52,31 @@ def download_media(url, format_type, quality="1080", extension="mp3", status_hoo
     # Status Phase Tracking
     current_phase = {"value": "SEARCHING"}
 
+    last_update = {"time": 0}
+
     def progress_handler(d):
-        if status_hook is not None:
-            if d['status'] == "downloading" and current_phase["value"] != "DOWNLOADING":
-                current_phase["value"] = "DOWNLOADING"
-                status_hook("DOWNLOADING")
-            elif d['status'] == "finished" and current_phase["value"] != "PROCESSING":
-                current_phase["value"] = "PROCESSING"
-                status_hook("PROCESSING")
+        if status_hook is None:
+            return
+        now = time.time()
+        if d['status'] == "downloading":
+            if now - last_update["time"] < 2.0 and current_phase["value"] == "DOWNLOADING":
+                return
+            last_update["time"] = now
+            current_phase["value"] = "DOWNLOADING"
+            downloaded = d.get('downloaded_bytes', 0) or 0
+            total = d.get('total_bytes') or d.get('total_bytes_estimate') or 0
+            speed = d.get('speed') or 0
+            percent = (downloaded / total * 100) if total > 0 else 0
+            status_hook({
+                "phase": "DOWNLOADING",
+                "percent": round(percent, 1),
+                "downloaded_mb": round(downloaded / 1024 / 1024, 1),
+                "total_mb": round(total / 1024 / 1024, 1),
+                "speed_mb": round(speed / 1024 / 1024, 2) if speed else 0,
+            })
+        elif d['status'] == "finished" and current_phase["value"] != "PROCESSING":
+            current_phase["value"] = "PROCESSING"
+            status_hook({"phase": "PROCESSING"})
 
     # Ensure downloads directory exists
     if not os.path.exists("downloads"):
