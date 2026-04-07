@@ -128,10 +128,11 @@ class MediaBot(commands.Bot):
 # --- BOT ENTRYPOINT ---
 if __name__ == "__main__":
     load_dotenv()
-    token = os.getenv("DISCORD_TOKEN")
+    # Check for both standard names
+    token = os.getenv("DISCORD_TOKEN") or os.getenv("DISCORD_BOT_TOKEN")
     
     if not token:
-        logger.critical("No DISCORD_TOKEN found in your .env file!")
+        logger.critical("No DISCORD_TOKEN or DISCORD_BOT_TOKEN found in your .env file!")
     else:
         bot = MediaBot()
         bot.run(token)
