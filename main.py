@@ -59,12 +59,17 @@ class MediaBot(commands.Bot):
                     f"👋 Hello, {message.author.display_name}! I noticed you shared a media link.\n"
                     "Would you like me to process that for you? Just pick a format below! 🚀"
                 )
-                await message.reply(prompt_text, view=DashboardView(url=detected_url), delete_after=300)
+                # Pass the original message ID as the trigger_message_id
+                await message.reply(
+                    prompt_text, 
+                    view=DashboardView(url=detected_url, trigger_message_id=message.id), 
+                    delete_after=300
+                )
 
         await self.process_commands(message)
 
     async def setup_hook(self):
-        # The persistent view for the dashboard shouldn't have a pre-filled URL
+        # The persistent view for the dashboard shouldn't have a pre-filled URL or trigger message
         self.add_view(DashboardView())
         
         # Start the Static File Server

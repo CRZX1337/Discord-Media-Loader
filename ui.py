@@ -15,13 +15,11 @@ try:
 except Exception:
     CONFIG = {"BASE_URL": "http://localhost:8080"}
 
-async def start_analysis(interaction: discord.Interaction, url: str, format_requested: str):
+async def start_analysis(interaction: discord.Interaction, url: str, format_requested: str, trigger_message_id: int = None):
     """Core logic to analyze a link and present the next selection view."""
-    # If the interaction hasn't been responded to yet (button case)
     if not interaction.response.is_done():
         await interaction.response.send_message("🔍 **Analyzing content...** Please wait.", ephemeral=True)
     else:
-        # Otherwise update the existing message (modal case)
         await interaction.edit_original_response(content="🔍 **Analyzing content...** Please wait.", view=None)
     
     info = await asyncio.to_thread(get_media_info, url)
@@ -33,20 +31,21 @@ async def start_analysis(interaction: discord.Interaction, url: str, format_requ
     title_short = info['title'][:50] + "..." if len(info['title']) > 50 else info['title']
     
     if format_requested == "video":
-        view = QualitySelectView(url, info['heights'])
+        view = QualitySelectView(url, info['heights'], trigger_message_id)
         await interaction.edit_original_response(content=f"🎬 **Found:** *{title_short}*\nSelect Your Video Quality:", view=view)
     elif format_requested == "audio":
-        view = AudioFormatView(url)
+        view = AudioFormatView(url, trigger_message_id)
         await interaction.edit_original_response(content=f"🎵 **Found:** *{title_short}*\nSelect Audio Format:", view=view)
     elif format_requested == "picture":
-        view = PictureFormatView(url)
+        view = PictureFormatView(url, trigger_message_id)
         await interaction.edit_original_response(content=f"🖼️ **Found:** *{title_short}*\nSelect Image Format:", view=view)
 
 class QualitySelectView(discord.ui.View):
     """Dynamic quality selection for Videos."""
-    def __init__(self, url: str, heights: list):
+    def __init__(self, url: str, heights: list, trigger_message_id: int = None):
         super().__init__(timeout=180)
         self.url = url
+        self.trigger_message_id = trigger_message_id
         
         options = []
         standard_heights = [360, 480, 720, 1080, 1440, 2160]
@@ -70,13 +69,14 @@ class QualitySelectView(discord.ui.View):
 
     async def on_select(self, interaction: discord.Interaction):
         quality = interaction.data['values'][0]
-        await process_action(interaction, self.url, "video", quality=quality)
+        await process_action(interaction, self.url, "video", quality=quality, trigger_message_id=self.trigger_message_id)
 
 class AudioFormatView(discord.ui.View):
     """Format selection for Audio."""
-    def __init__(self, url: str):
+    def __init__(self, url: str, trigger_message_id: int = None):
         super().__init__(timeout=180)
         self.url = url
+        self.trigger_message_id = trigger_message_id
 
     @discord.ui.select(
         placeholder="Choose audio format...",
@@ -88,13 +88,14 @@ class AudioFormatView(discord.ui.View):
         ]
     )
     async def select_format(self, interaction: discord.Interaction, select: discord.ui.Select):
-        await process_action(interaction, self.url, "audio", extension=select.values[0])
+        await process_action(interaction, self.url, "audio", extension=select.values[0], trigger_message_id=self.trigger_message_id)
 
 class PictureFormatView(discord.ui.View):
     """Format selection for Pictures."""
-    def __init__(self, url: str):
+    def __init__(self, url: str, trigger_message_id: int = None):
         super().__init__(timeout=180)
         self.url = url
+        self.trigger_message_id = trigger_message_id
 
     @discord.ui.select(
         placeholder="Choose image format...",
@@ -105,16 +106,15 @@ class PictureFormatView(discord.ui.View):
         ]
     )
     async def select_format(self, interaction: discord.Interaction, select: discord.ui.Select):
-        await process_action(interaction, self.url, "picture", extension=select.values[0])
+        await process_action(interaction, self.url, "picture", extension=select.values[0], trigger_message_id=self.trigger_message_id)
 
-async def process_action(interaction: discord.Interaction, url: str, format_type: str, quality: str = "1080", extension: str = None):
-    # (Existing implementation of process_action remains the same)
+async def process_action(interaction: discord.Interaction, url: str, format_type: str, quality: str = "1080", extension: str = None, trigger_message_id: int = None):
+    """Global processor for the final download stage."""
     embed = discord.Embed(
         title="📥 Fetchy | Working...",
         description="🔍 Initializing request...",
         color=discord.Color.yellow()
     )
-    # Check if we are responding to a selection interaction or updating status
     if not interaction.response.is_done():
         await interaction.response.send_message(embed=embed, ephemeral=True)
     else:
@@ -139,6 +139,7 @@ async def process_action(interaction: discord.Interaction, url: str, format_type
         file_path = await asyncio.to_thread(download_media, url, format_type, quality, extension, status_callback)
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
         
+        # Delivery Logic
         if file_size_mb > 10.0:
             base_url = CONFIG.get("BASE_URL", "http://localhost:8080").rstrip('/')
             filename = os.path.basename(file_path)
@@ -157,6 +158,15 @@ async def process_action(interaction: discord.Interaction, url: str, format_type
             embed.color = discord.Color.green()
             discord_file = discord.File(file_path)
             await interaction.edit_original_response(embed=embed, attachments=[discord_file])
+
+        # CLEANUP: Delete the original trigger message if successfully processed
+        if trigger_message_id:
+            try:
+                msg = await interaction.channel.fetch_message(trigger_message_id)
+                await msg.delete()
+                logger.info(f"Trigger message {trigger_message_id} deleted successfully.")
+            except Exception as e:
+                logger.warning(f"Failed to delete trigger message: {e}")
 
     except Exception as e:
         logger.error(f"Download error: {e}")
@@ -184,27 +194,28 @@ class DownloadModal(discord.ui.Modal):
         await start_analysis(interaction, self.url_input.value, self.format_requested)
 
 class DashboardView(discord.ui.View):
-    def __init__(self, url: str = None):
+    def __init__(self, url: str = None, trigger_message_id: int = None):
         super().__init__(timeout=None)
         self.url = url
+        self.trigger_message_id = trigger_message_id
 
     @discord.ui.button(label="🎥 Video", style=discord.ButtonStyle.primary, custom_id="fetchy_video")
     async def video(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.url:
-            await start_analysis(interaction, self.url, "video")
+            await start_analysis(interaction, self.url, "video", self.trigger_message_id)
         else:
             await interaction.response.send_modal(DownloadModal("video"))
 
     @discord.ui.button(label="🎵 Audio", style=discord.ButtonStyle.success, custom_id="fetchy_audio")
     async def audio(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.url:
-            await start_analysis(interaction, self.url, "audio")
+            await start_analysis(interaction, self.url, "audio", self.trigger_message_id)
         else:
             await interaction.response.send_modal(DownloadModal("audio"))
 
     @discord.ui.button(label="🖼️ Picture", style=discord.ButtonStyle.secondary, custom_id="fetchy_picture")
     async def picture(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.url:
-            await start_analysis(interaction, self.url, "picture")
+            await start_analysis(interaction, self.url, "picture", self.trigger_message_id)
         else:
             await interaction.response.send_modal(DownloadModal("picture"))
