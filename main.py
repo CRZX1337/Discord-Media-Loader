@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from config import CONFIG
 from ui import DashboardView, SupportInformationEmbed
 import downloader
+from constants import BOT_NAME
 
 # --- LOGGING SETUP ---
 logging.basicConfig(
@@ -93,7 +94,7 @@ class MediaBot(commands.Bot):
             except Exception:
                 pass
             embed = discord.Embed(
-                title="📥 Fetchy | Your Personal Media Assistant",
+                title=f"📥 {BOT_NAME} | Your Personal Media Assistant",
                 description="I am here to assist you with high-performance media extraction and management. Enjoy a fully private and anonymous experience across all your interactions.\n\nHow to get started:\n1. Select a format below (Video, Audio, or Picture).\n2. Provide the source link in the secure input field.\n3. Choose your quality/format and I'll handle the rest! 🚀\n\n\n✨ Key Benefits: High Performance - Large File Support - Zero Tracking\n\n🖥️ Source Code: [GitHub Repository](https://github.com/CRZX1337/Fetchy)",
                 color=discord.Color.blurple()
             )

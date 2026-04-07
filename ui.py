@@ -6,6 +6,7 @@ import os
 import urllib.parse
 from config import CONFIG
 import downloader
+from constants import BOT_NAME
 
 def is_valid_url(url: str) -> bool:
     """Validates if a string is a proper http/https URL."""
@@ -27,7 +28,7 @@ class SupportInformationEmbed(discord.Embed):
     def __init__(self):
         super().__init__(
             title="❓ Supported Platforms",
-            description="Fetchy supports a wide range of platforms! Here are the main ones:",
+            description=f"{BOT_NAME} supports a wide range of platforms! Here are the main ones:",
             color=discord.Color.blue()
         )
         self.add_field(name="🎥 Video", value="YouTube, TikTok, Twitter/X, Instagram, Facebook", inline=False)
@@ -239,7 +240,7 @@ async def process_action(interaction: discord.Interaction, url: str, format_type
     
     try:
         embed = discord.Embed(
-            title="📥 Fetchy | Working...",
+            title=f"📥 {BOT_NAME} | Working...",
             description="I'm processing your media Request. It will be ready in a moment!",
             color=discord.Color.yellow()
         )
