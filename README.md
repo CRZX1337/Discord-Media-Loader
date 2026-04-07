@@ -1,72 +1,74 @@
-# 📥 Discord Media Downloader Bot
+# 🚀 Fetchy — Your Personal Media Assistant
 
-A high-performance, modern Discord bot for downloading Videos, Audio, and Pictures using `yt-dlp`. 
+Fetchy is a high-performance, privacy-focused Discord bot designed to download and manage media from various platforms seamlessly. Built with a modern modular architecture, Fetchy provides a clean, persistent dashboard for all your extraction needs.
 
-## ✨ Features
-- 🎬 **Video:** MP4 format in the highest possible quality (merged Video + Audio).
-- 🎵 **Audio:** Extracted straight to MP3.
-- 🖼️ **Pictures:** Extracts and saves media preview pictures (as PNG).
-- ⚡ **Non-Blocking:** The bot stays responsive during long downloads.
-- 🧹 **Auto-Cleanup:** Automated local file management to save disk space.
-- 📱 **Modern UI:** Full control over interactive Slash-Commands and slick UI dropdowns/buttons.
+## ✨ Key Features
+
+- 🎬 **Video Extraction:** High-quality MP4 downloads with automatic merging.
+- 🎵 **Audio Extraction:** High-fidelity MP3 conversion for your favorite tracks.
+- 🖼️ **Picture Extraction:** High-resolution preview image extraction (PNG).
+- ⚡ **Asynchronous Processing:** Non-blocking downloads ensure the bot stays responsive.
+- 🛡️ **Privacy Centric:** Completely anonymous interactions with automatic ephemeral responses.
+- 🧹 **Automated Infrastructure:** Built-in disk cleanup and Docker support for a maintenance-free experience.
 
 ---
 
-## 🚀 Deployment on Ubuntu (Docker) - Recommended!
+## 🚀 Getting Started
 
-The absolute best and lowest-maintenance way to run this bot is via **Docker**. This packages Python and required system dependencies like `ffmpeg` into a clean container ("Works on my machine" principle).
+### 📦 Docker Deployment (Recommended)
+The most efficient way to run Fetchy is using Docker. This ensures a consistent environment with all dependencies (like FFmpeg) pre-configured.
 
-### Prerequisites
-Your server requires **Docker** and **Docker Compose**.
-On a fresh Ubuntu setup, install them like this:
-```bash
-sudo apt update
-sudo apt install docker.io docker-compose -y
-```
-
-### 1. Installation
-1. Clone the repository to your server:
+1. **Clone the Repository:**
    ```bash
-   git clone https://github.com/CRZX1337/Discord-Media-Loader/
-   cd Discord-Media-Loader
+   git clone https://github.com/CRZX1337/Fetchy
+   cd Fetchy
    ```
-2. Copy the boilerplate environment file:
+
+2. **Configure Environment:**
    ```bash
    cp .env.example .env
+   # Edit .env and add your DISCORD_BOT_TOKEN
    ```
-3. Type your Bot Token into the newly created file:
+
+3. **Deploy:**
    ```bash
-   nano .env
-   # Insert DISCORD_BOT_TOKEN and save via CTRL+O -> Enter -> CTRL+X
+   sudo docker compose up -d --build
    ```
-
-### 2. Startup
-Run this command to boot the bot gracefully in the background:
-```bash
-sudo docker-compose up -d --build
-```
-*(Alternatively, just run `./update.sh`!)*
-
-### 3. Check Logs
-To see if the bot is online or actively downloading stuff:
-```bash
-sudo docker-compose logs -f
-```
 
 ---
 
-## 💻 Local Development
+### 💻 Local Installation
+If you prefer to run the system directly on your host machine:
 
-If you prefer avoiding Docker for local tests:
+1. **System Requirements:**
+   - Python 3.10+
+   - **FFmpeg** (Must be in your system PATH)
 
-1. Install **Python 3.10+** and mandatory **FFmpeg** on your machine.
-2. Add the FFmpeg `bin` folder to your system's Environment Variables (System Path).
-3. Install all required packages:
+2. **Install Dependencies:**
    ```bash
    pip install -r requirements.txt
    ```
-4. Create a `.env` file (or copy `.env.example`) and supply your `DISCORD_BOT_TOKEN`.
-5. Run your bot smoothly:
+
+3. **Run the Application:**
    ```bash
    python main.py
    ```
+
+---
+
+## 🛠️ How to Use
+Fetchy utilizes a centralized **Dashboard** for a clean user experience:
+
+1. **Navigate** to your designated dashboard channel.
+2. **Select your format** using the interactive buttons (Video, Audio, or Picture).
+3. **Submit your link** in the secure modal popup.
+4. **Download** your file directly from the ephemeral response.
+
+## 📜 Credits & Stack
+Fetchy is powered by these amazing open-source projects:
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — High-performance media extraction.
+- [discord.py](https://github.com/Rapptz/discord.py) — Modern Discord API wrapper for Python.
+- [Docker](https://www.docker.com/) — Containerization and infrastructure.
+
+---
+*Developed with care by [CRZX1337](https://github.com/CRZX1337)*

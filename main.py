@@ -63,21 +63,21 @@ class MediaBot(commands.Bot):
                 
             # Permanent Dashboard Setup
             dash_embed = discord.Embed(
-                title="📥 Hi, I'm Fetchy! Let's grab some media.",
+                title="📥 Hi, I'm Fetchy! Your Personal Media Assistant.",
                 description=(
-                    "I'm here to help you download your favorite content as fast as possible. "
-                    "Everything we do here stays between us—completely anonymous and private. ✨\n\n"
-                    "**How to use me:**\n"
-                    "1. Pick a **format** below (Video, Audio, or Picture).\n"
-                    "2. Drop your **link** into the box.\n"
-                    "3. Sit back and relax while I fetch your file! 🚀\n\n"
+                    "I am here to help you download and manage your favorite media efficiently. "
+                    "All interactions are handled with strict privacy and anonymity. ✨\n\n"
+                    "**How to get started:**\n"
+                    "1. Select a **format** below (Video, Audio, or Picture).\n"
+                    "2. Provide the **source link** in the input field.\n"
+                    "3. Relax while I process and deliver your file directly to you! 🚀\n\n"
                     "---\n"
-                    "🍪 **Quick Perks:** High Quality • Fast & Safe • No Tracking\n"
-                    "⭐ **Check out my heart (source code):** [GitHub](https://github.com/CRZX1337/Discord-Media-Loader)"
+                    "✨ **Key Benefits:** High Performance • Secure Processing • Zero Tracking\n"
+                    "🖥️ **Source Code:** [GitHub Repository](https://github.com/CRZX1337/Fetchy)"
                 ),
                 color=discord.Color.blurple()
             )
-            dash_embed.set_footer(text="Handcrafted with ❤️ • Fully Automated")
+            dash_embed.set_footer(text="Developed with care • System fully operational")
             
             # Send the View/Embed back into the cleaned channel
             await channel.send(embed=dash_embed, view=DashboardView())

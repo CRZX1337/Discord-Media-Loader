@@ -41,12 +41,12 @@ class DownloadModal(discord.ui.Modal):
             file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
             if file_size_mb > 10.0:
                 embed.title = "❌ Download failed"
-                embed.description = f"Oops! Your file is **{file_size_mb:.2f} MB**.\nDiscord's free upload limit is currently set to 10 MB. 😓"
+                embed.description = f"The requested file is **{file_size_mb:.2f} MB**, which exceeds the 10 MB limit for mobile-friendly uploads. 😓"
                 embed.color = discord.Color.red()
                 await interaction.edit_original_response(embed=embed, attachments=[])
             else:
-                embed.title = "✅ All done!"
-                embed.description = f"Here is your file, freshly baked! 🍪\n\n*Liked it? Give us a star on [GitHub](https://github.com/CRZX1337/Discord-Media-Loader/)*"
+                embed.title = "✅ Processing complete"
+                embed.description = f"Your file has been prepared and is ready for use. ✨\n\n*Support the project: [Star us on GitHub](https://github.com/CRZX1337/Fetchy)*"
                 embed.color = discord.Color.green()
                 
                 # Post file to the Interaction webhook
