@@ -21,18 +21,47 @@ from config import CONFIG
 from ui import DashboardView, SupportInformationEmbed
 import ui
 import downloader
+import file_server
 from constants import BOT_NAME
 
-# --- STATIC SERVER SETTING ---
+# --- TOKEN-AUTHENTICATED FILE SERVER ---
+async def _handle_download(request: web.Request) -> web.Response:
+    """Serve files only to callers that present a valid, unexpired token."""
+    token = request.rel_url.query.get("token")
+    if not token:
+        return web.Response(
+            status=403,
+            content_type="application/json",
+            text='{"error": "Missing token"}'
+        )
+    entry = file_server._file_tokens.get(token)
+    if entry is None:
+        return web.Response(
+            status=403,
+            content_type="application/json",
+            text='{"error": "Invalid token"}'
+        )
+    filepath, expiry = entry
+    if time.time() > expiry:
+        del file_server._file_tokens[token]
+        return web.Response(
+            status=403,
+            content_type="application/json",
+            text='{"error": "Token expired"}'
+        )
+    # Token stays alive for re-downloads within the 24 h window
+    return web.FileResponse(filepath)
+
+
 async def start_server():
-    """Starts a simple aiohttp server to host files locally."""
+    """Starts an aiohttp server with token-based file serving on port 8080."""
     app = web.Application()
-    app.router.add_static('/downloads/', 'downloads/')
+    app.router.add_get('/downloads', _handle_download)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 8080)
     await site.start()
-    logger.info("Static file server started on port 8080.")
+    logger.info("Token-authenticated file server started on port 8080.")
 
 class MediaBot(commands.Bot):
     def __init__(self):
@@ -83,10 +112,16 @@ class MediaBot(commands.Bot):
 
         # Clean up expired cooldown entries
         now = time.time()
-        expired = [uid for uid, t in ui._user_cooldowns.items() if now - t > 30]
-        for uid in expired:
+        expired_cooldowns = [uid for uid, t in ui._user_cooldowns.items() if now - t > 30]
+        for uid in expired_cooldowns:
             del ui._user_cooldowns[uid]
-        logger.info(f"Cleared {len(expired)} expired cooldown entries.")
+        logger.info(f"Cleared {len(expired_cooldowns)} expired cooldown entries.")
+
+        # Clean up expired file tokens
+        expired_tokens = [t for t, (_, exp) in file_server._file_tokens.items() if now > exp]
+        for t in expired_tokens:
+            del file_server._file_tokens[t]
+        logger.info(f"Cleared {len(expired_tokens)} expired file tokens.")
 
     @status_rotation.before_loop
     async def before_status_rotation(self):
