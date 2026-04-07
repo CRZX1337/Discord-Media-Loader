@@ -1,166 +1,119 @@
-import os
-import logging
-import itertools
 import discord
-import json
-import time
-import asyncio
-import re
+import logging
+import os
+import aiohttp
+from aiohttp import web
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
-from aiohttp import web
 
-# Import our UI architecture
-from ui import DashboardView
+# --- CUSTOM MODULES ---
+from config import CONFIG
+from ui import DashboardView, SupportInformationEmbed
+import downloader
 
 # --- LOGGING SETUP ---
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("MediaBot")
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("MediaBot.Main")
 
-# --- CONFIGURATION LOADING ---
-try:
-    with open("config.json", "r") as f:
-        CONFIG = json.load(f)
-except Exception as e:
-    logger.warning(f"Could not load config.json: {e}. Using hardcoded defaults.")
-    CONFIG = {
-        "CHANNEL_ID": 1491040447370362980,
-        "STATUS_ROTATION_SPEED": 10,
-        "LINK_REGEX": r'(https?://)?(www\.)?(youtube\.com|youtu\.be|tiktok\.com|twitter\.com|x\.com|instagram\.com)/[^\s]+',
-        "BASE_URL": "http://localhost:8080"
-    }
-
-CHANNEL_ID = CONFIG.get("CHANNEL_ID")
-LINK_REGEX = CONFIG.get("LINK_REGEX")
+# --- STATIC SERVER SETTING ---
+async def start_server():
+    """Starts a simple aiohttp server to host files locally."""
+    app = web.Application()
+    app.router.add_static('/downloads/', 'downloads/')
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    logger.info("Static file server started on port 8080.")
 
 class MediaBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(command_prefix="!", intents=intents)
-        
-        self.activities = itertools.cycle([
-            discord.Activity(type=discord.ActivityType.watching, name="over the Dashboard ✨"),
-            discord.Activity(type=discord.ActivityType.listening, name="to 🎵 Audio extractions"),
-            discord.Activity(type=discord.ActivityType.playing, name="🎬 with Media files"),
-            discord.Activity(type=discord.ActivityType.watching, name="out for new Links 🚀")
-        ])
+        self.status_index = 0
+        self.statuses = [
+            "Watching for links... 🔍",
+            "Ready to download! 📽️",
+            "Helping users fetch media! ✨"
+        ]
+
+    async def setup_hook(self):
+        """Called when the bot is starting."""
+        self.add_view(DashboardView())
+        self.status_rotation.start()
+        self.cleanup_task.start()
+        await start_server()
+        logger.info("Bot setup completed.")
+
+    @tasks.loop(seconds=CONFIG.get("STATUS_ROTATION_SPEED", 10))
+    async def status_rotation(self):
+        """Rotates the bot's status message."""
+        await self.change_presence(activity=discord.Game(name=self.statuses[self.status_index]))
+        self.status_index = (self.status_index + 1) % len(self.statuses)
+
+    @tasks.loop(hours=24)
+    async def cleanup_task(self):
+        """Automatically cleans up the downloads folder every 24 hours."""
+        logger.info("Running 24-hour cleanup task...")
+        count = 0
+        if os.path.exists("downloads"):
+            for filename in os.listdir("downloads"):
+                file_path = os.path.join("downloads", filename)
+                try:
+                    if os.path.isfile(file_path):
+                        os.remove(file_path)
+                        count += 1
+                except Exception as e:
+                    logger.error(f"Failed to delete {file_path}: {e}")
+        logger.info(f"Cleanup finished. Deleted {count} files.")
+
+    @status_rotation.before_loop
+    async def before_status_rotation(self):
+        await self.wait_until_ready()
+
+    async def on_ready(self):
+        logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
+        logger.info(f"Targeting Channel ID: {CONFIG['CHANNEL_ID']}")
 
     async def on_message(self, message):
+        # Ignore own messages
         if message.author == self.user:
             return
 
-        if message.channel.id == CHANNEL_ID:
-            match = re.search(LINK_REGEX, message.content, re.IGNORECASE)
-            if match:
-                detected_url = match.group(0)
-                logger.info(f"Media link detected from {message.author}: {detected_url}")
-                prompt_text = (
-                    f"👋 Hello, {message.author.display_name}! I noticed you shared a media link.\n"
-                    "Would you like me to process that for you? Just pick a format below! 🚀"
-                )
-                # Pass the original message ID as the trigger_message_id
+        # Simple manual dashboard trigger
+        if message.content.lower() == "!dashboard":
+            await message.channel.send(
+                content="Here is your permanent dashboard for media tasks!",
+                view=DashboardView()
+            )
+            return
+
+        # Check for media links in the designated channel
+        if message.channel.id == CONFIG['CHANNEL_ID']:
+            import re
+            if re.search(CONFIG['LINK_REGEX'], message.content):
+                # Send the dashboard as a reply to the link message
+                # Passing the message_id to DashboardView enables auto-deletion later
+                view = DashboardView(url=message.content, trigger_message_id=message.id)
                 await message.reply(
-                    prompt_text, 
-                    view=DashboardView(url=detected_url, trigger_message_id=message.id), 
-                    delete_after=300
+                    f"Hello, {message.author.display_name}! I noticed you shared a media link.\n"
+                    "Would you like me to process that for you? Just pick a format below! 🚀",
+                    view=view
                 )
 
         await self.process_commands(message)
 
-    async def setup_hook(self):
-        # The persistent view for the dashboard shouldn't have a pre-filled URL or trigger message
-        self.add_view(DashboardView())
-        
-        # Start the Static File Server
-        await self.start_web_server()
-        
-        await self.tree.sync()
-        logger.info("Bot setup complete. All services registered.")
-
-    async def start_web_server(self):
-        """Starts a clean static file server for self-hosting large files."""
-        app = web.Application()
-        # Serve the /downloads folder at the /dl/ path
-        app.router.add_static('/dl/', os.path.join(os.getcwd(), 'downloads'), show_index=False)
-        
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, '0.0.0.0', 8080)
-        await site.start()
-        logger.info("Static file server listening on port 8080.")
-
-    @tasks.loop(seconds=10)
-    async def status_task(self):
-        await self.change_presence(activity=next(self.activities))
-
-    @tasks.loop(hours=24)
-    async def cleanup_task(self):
-        """Background maintenance with 24-hour retention."""
-        temp_dir = os.path.join(os.getcwd(), "downloads")
-        if not os.path.exists(temp_dir):
-            return
-            
-        logger.info("Starting maintenance cleanup...")
-        count = 0
-        now = time.time()
-        
-        try:
-            for filename in os.listdir(temp_dir):
-                file_path = os.path.join(temp_dir, filename)
-                if os.path.isfile(file_path):
-                    # Delete files older than 24 hours (86400 seconds)
-                    if now - os.path.getmtime(file_path) > 86400:
-                        os.remove(file_path)
-                        count += 1
-            if count > 0:
-                logger.info(f"Cleanup complete. Deleted {count} legacy files.")
-        except Exception as e:
-            logger.error(f"Cleanup task failed: {e}")
-
-    async def on_ready(self):
-        logger.info(f"Bot is online as {self.user}")
-        
-        rotation_speed = CONFIG.get("STATUS_ROTATION_SPEED", 10)
-        self.status_task.change_interval(seconds=rotation_speed)
-
-        if not self.status_task.is_running():
-            self.status_task.start()
-        
-        if not self.cleanup_task.is_running():
-            self.cleanup_task.start()
-
-        channel = self.get_channel(CHANNEL_ID)
-        if channel:
-            try:
-                await channel.purge(limit=100)
-            except Exception:
-                pass
-                
-            dash_embed = discord.Embed(
-                title="📥 Fetchy | Your Personal Media Assistant",
-                description=(
-                    "I am here to assist you with high-performance media extraction and management. "
-                    "Enjoy a fully private and anonymous experience across all your interactions.\n\n"
-                    "**How to get started:**\n"
-                    "1. Select a **format** below (Video, Audio, or Picture).\n"
-                    "2. Provide the **source link** in the secure input field.\n"
-                    "3. Choose your **quality/format** and I'll handle the rest! 🚀\n\n\n"
-                    "✨ **Key Benefits:** High Performance • Large File Support • Zero Tracking\n\n"
-                    "🖥️ **Source Code:** [GitHub Repository](https://github.com/CRZX1337/Fetchy)"
-                ),
-                color=discord.Color.blurple()
-            )
-            dash_embed.set_thumbnail(url="https://raw.githubusercontent.com/CRZX1337/Fetchy/main/media/logo.png")
-            dash_embed.set_footer(text="Handcrafted for efficiency • System fully operational")
-            await channel.send(embed=dash_embed, view=DashboardView())
-            logger.info("Dashboard posted.")
-
+# --- BOT ENTRYPOINT ---
 if __name__ == "__main__":
     load_dotenv()
-    TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-    if not TOKEN:
-        logger.error("No token found!")
+    token = os.getenv("DISCORD_TOKEN")
+    
+    if not token:
+        logger.critical("No DISCORD_TOKEN found in your .env file!")
     else:
         bot = MediaBot()
-        bot.run(TOKEN)
+        bot.run(token)

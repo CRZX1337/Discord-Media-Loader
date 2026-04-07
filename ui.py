@@ -1,36 +1,45 @@
-import os
-import asyncio
-import logging
 import discord
-import json
+import logging
+import asyncio
+import os
+from config import CONFIG
+import downloader
 
-from downloader import download_media, get_media_info
+# --- LOGGING SETUP ---
+logger = logging.getLogger("MediaBot.UI")
 
-logger = logging.getLogger("MediaBot")
+# --- RATE LIMITING ---
+active_downloads = {}  # user_id -> count
+MAX_CONCURRENT_PER_USER = 2
 
-# Load config for BASE_URL
-try:
-    with open("config.json", "r") as f:
-        CONFIG = json.load(f)
-except Exception:
-    CONFIG = {"BASE_URL": "http://localhost:8080"}
+class SupportInformationEmbed(discord.Embed):
+    """Custom embed for supported sites."""
+    def __init__(self):
+        super().__init__(
+            title="❓ Supported Platforms",
+            description="Fetchy supports a wide range of platforms! Here are the main ones:",
+            color=discord.Color.blue()
+        )
+        self.add_field(name="🎥 Video", value="YouTube, TikTok, Twitter/X, Instagram, Facebook", inline=False)
+        self.add_field(name="🎵 Audio", value="SoundCloud, Bandcamp, YouTube Music", inline=False)
+        self.add_field(name="🖼️ Pictures", value="Instagram, Twitter, Pinterest (mostly via Link)", inline=False)
+        self.add_field(name="...and many more!", value="Supported via yt-dlp powerful engine.", inline=False)
 
 async def start_analysis(interaction: discord.Interaction, url: str, format_requested: str, trigger_message_id: int = None, prompt_message_id: int = None):
     """Core logic to analyze a link and present the next selection view."""
     if not interaction.response.is_done():
         await interaction.response.send_message("🔍 **Analyzing content...** Please wait.", ephemeral=True)
-    else:
-        await interaction.edit_original_response(content="🔍 **Analyzing content...** Please wait.", view=None)
     
-    info = await asyncio.to_thread(get_media_info, url)
-    
+    # 1. ANALYZE LINK
+    info = downloader.get_media_info(url)
     if not info:
-        await interaction.edit_original_response(content="❌ **Link Analysis Failed.** I couldn't find any media there! 🤔")
+        await interaction.edit_original_response(content="❌ **Oops!** I couldn't analyze that link. Is it the right format?")
         return
 
     title_short = info['title'][:50] + "..." if len(info['title']) > 50 else info['title']
     
     if format_requested == "video":
+        # Pass resolution heights for dynamic filtering
         view = QualitySelectView(url, info['heights'], trigger_message_id, prompt_message_id)
         await interaction.edit_original_response(content=f"🎬 **Found:** *{title_short}*\nSelect Your Video Quality:", view=view)
     elif format_requested == "audio":
@@ -41,7 +50,7 @@ async def start_analysis(interaction: discord.Interaction, url: str, format_requ
         await interaction.edit_original_response(content=f"🖼️ **Found:** *{title_short}*\nSelect Image Format:", view=view)
 
 class QualitySelectView(discord.ui.View):
-    """Dynamic quality selection for Videos."""
+    """Refined dynamic quality selection based on available resolutions."""
     def __init__(self, url: str, heights: list, trigger_message_id: int = None, prompt_message_id: int = None):
         super().__init__(timeout=180)
         self.url = url
@@ -49,28 +58,35 @@ class QualitySelectView(discord.ui.View):
         self.prompt_message_id = prompt_message_id
         
         options = []
-        standard_heights = [360, 480, 720, 1080, 1440, 2160]
-        available_standard = [h for h in standard_heights if h <= max(heights or [2160])]
+        # Task 2: Only show resolutions that actually exist in the video
+        if not heights:
+            # Fallback for when height detection fails but link is valid
+            options.append(discord.SelectOption(label="Best Available", value="best", description="High-Def or Original"))
+        else:
+            # Defined standard breakpoints to keep list clean
+            standard_breakpoints = {360: "SD", 480: "HQ", 720: "HD", 1080: "Full HD", 1440: "2K", 2160: "4K"}
+            
+            # Sort heights descending
+            sorted_heights = sorted(list(set(heights)), reverse=True)
+            
+            for h in sorted_heights:
+                label = f"{h}p"
+                desc = standard_breakpoints.get(h, "Auto")
+                options.append(discord.SelectOption(label=label, value=str(h), description=desc))
         
-        for h in available_standard:
-            label = f"{h}p"
-            if h == 1080: label += " (Full HD)"
-            if h == 2160: label += " (Ultra HD 4K)"
-            options.append(discord.SelectOption(label=label, value=str(h)))
-        
-        if not options:
-            options.append(discord.SelectOption(label="Best Available", value="best"))
+        # Add the dropdown
+        self.add_item(self.Dropdown(options))
 
-        self.add_item(self.create_select(options))
+    class Dropdown(discord.ui.Select):
+        def __init__(self, options):
+            super().__init__(placeholder="Choose video quality...", options=options)
 
-    def create_select(self, options):
-        select = discord.ui.Select(placeholder="Choose video quality...", options=options)
-        select.callback = self.on_select
-        return select
+        async def callback(self, interaction: discord.Interaction):
+            await self.view.on_select(interaction)
 
     async def on_select(self, interaction: discord.Interaction):
         quality = interaction.data['values'][0]
-        await process_action(interaction, self.url, "video", quality=quality, trigger_message_id=self.trigger_message_id, prompt_message_id=self.prompt_message_id)
+        await process_action(interaction, self.view.url, "video", quality=quality, trigger_message_id=self.view.trigger_message_id, prompt_message_id=self.view.prompt_message_id)
 
 class AudioFormatView(discord.ui.View):
     """Format selection for Audio."""
@@ -112,102 +128,114 @@ class PictureFormatView(discord.ui.View):
         await process_action(interaction, self.url, "picture", extension=select.values[0], trigger_message_id=self.trigger_message_id, prompt_message_id=self.prompt_message_id)
 
 async def process_action(interaction: discord.Interaction, url: str, format_type: str, quality: str = "1080", extension: str = None, trigger_message_id: int = None, prompt_message_id: int = None):
-    """Global processor for the final download stage."""
-    embed = discord.Embed(
-        title="📥 Fetchy | Working...",
-        description="🔍 Initializing request...",
-        color=discord.Color.yellow()
-    )
-    if not interaction.response.is_done():
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    else:
-        await interaction.edit_original_response(embed=embed, view=None)
+    """Global processor for the final download stage with rate limiting."""
+    user_id = interaction.user.id
+    
+    # Task 3: Per-user Rate Limiting
+    if active_downloads.get(user_id, 0) >= MAX_CONCURRENT_PER_USER:
+        return await interaction.response.send_message(
+            "⏳ **Whoa there!** You already have 2 active downloads. Please wait for one to finish! 🚦",
+            ephemeral=True
+        )
 
-    loop = interaction.client.loop
-
-    async def update_status_ui(phase):
-        phase_map = {
-            "SEARCHING": "🔍 Locating media...",
-            "DOWNLOADING": "📥 Downloading data...",
-            "PROCESSING": "⚙️ Optimizing and skinning..."
-        }
-        embed.description = phase_map.get(phase, phase)
-        await interaction.edit_original_response(embed=embed)
-
-    def status_callback(status):
-        asyncio.run_coroutine_threadsafe(update_status_ui(status), loop)
-
-    file_path = None
+    # Increment counter
+    active_downloads[user_id] = active_downloads.get(user_id, 0) + 1
+    
     try:
-        file_path = await asyncio.to_thread(download_media, url, format_type, quality, extension, status_callback)
-        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-        
-        # Delivery Logic
+        embed = discord.Embed(
+            title="📥 Fetchy | Working...",
+            description="I'm processing your media Request. It will be ready in a moment!",
+            color=discord.Color.yellow()
+        )
+        if not interaction.response.is_done():
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+        else:
+            await interaction.edit_original_response(content=None, embed=embed, view=None)
+
+        # 2. RUN DOWNLOAD (blocking, yt-dlp)
+        file_path, file_size_mb = await asyncio.to_thread(
+            downloader.download_media, url, format_type, quality, extension or "mp3"
+        )
+
+        if not file_path:
+            raise Exception("No file was returned from the downloader.")
+
+        # 3. HANDLE DELIVERY
+        # Large File Fallback (>10MB)
         if file_size_mb > 10.0:
-            base_url = CONFIG.get("BASE_URL", "http://localhost:8080").rstrip('/')
             filename = os.path.basename(file_path)
-            download_link = f"{base_url}/dl/{filename}"
-            embed.title = "📦 File is too large for Discord!"
-            embed.description = (
-                f"Your file is **{file_size_mb:.2f} MB**. I've hosted it privately for you.\n\n"
-                f"🚀 **Download Link:** [Click here to download]({download_link})\n\n"
-                "*Link expires in 24 hours.*"
-            )
-            embed.color = discord.Color.blue()
+            # Use configured BASE_URL
+            base_url = CONFIG.get("BASE_URL", "http://localhost:8080").rstrip('/')
+            download_url = f"{base_url}/downloads/{filename}"
+            embed.title = "💾 File Ready (Large)"
+            embed.description = f"This file was too large for Discord (>10MB).\n[**Click here to Download**]({download_url})\n\n*(File expires in 24 hours)*"
+            embed.color = discord.Color.green()
             await interaction.edit_original_response(embed=embed)
         else:
-            embed.title = "✅ Success!"
-            embed.description = "Your file has been prepared. Enjoy! ✨"
+            # Direct Send
+            file = discord.File(file_path)
+            await interaction.channel.send(content=f"✨ **Here is your {format_type}!** Enjoy!", file=file)
+            embed.title = "✅ Complete!"
+            embed.description = "Your file has been delivered to the channel."
             embed.color = discord.Color.green()
-            discord_file = discord.File(file_path)
-            await interaction.edit_original_response(embed=embed, attachments=[discord_file])
+            await interaction.edit_original_response(embed=embed)
+            # Cleanup small files immediately
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
-        # CLEANUP: Delete the original trigger message if successfully processed
+        # 4. UX CLEANUP: Auto-delete the trigger messages
         if trigger_message_id:
             try:
                 msg = await interaction.channel.fetch_message(trigger_message_id)
                 await msg.delete()
-                logger.info(f"Trigger message {trigger_message_id} deleted successfully.")
+                logger.info(f"Trigger message {trigger_message_id} deleted.")
             except Exception as e:
-                logger.warning(f"Failed to delete trigger message: {e}")
+                logger.warning(f"Could not delete trigger message: {e}")
 
-        # CLEANUP: Delete the bot's prompt message as well
         if prompt_message_id:
             try:
                 p_msg = await interaction.channel.fetch_message(prompt_message_id)
                 await p_msg.delete()
-                logger.info(f"Prompt message {prompt_message_id} deleted successfully.")
+                logger.info(f"Prompt message {prompt_message_id} deleted.")
             except Exception as e:
-                logger.warning(f"Failed to delete prompt message: {e}")
+                logger.warning(f"Could not delete prompt message: {e}")
 
     except Exception as e:
-        logger.error(f"Download error: {e}")
+        logger.error(f"UI Download Error: {e}")
+        error_msg = "Something went wrong while I was fetching your file. I'll try to do better next time! 😓"
+        e_str = str(e)
+        if "Private video" in e_str:
+            error_msg = "I'm sorry, that video seems to be private! 🔒 I can't access restricted content."
+        elif "Unsupported URL" in e_str:
+            error_msg = "Oops! I don't recognize this platform yet. Maybe check my supported sites? 🤔"
+        
         embed.title = "❌ Error"
-        embed.description = "I couldn't process this link. Please ensure it's public and valid. 😓"
+        embed.description = error_msg
         embed.color = discord.Color.red()
         await interaction.edit_original_response(embed=embed)
     finally:
-        if file_path and os.path.exists(file_path):
-            if os.path.getsize(file_path) / (1024 * 1024) <= 10.0:
-                os.remove(file_path)
+        # Decrement counter
+        active_downloads[user_id] = max(0, active_downloads.get(user_id, 1) - 1)
 
 class DownloadModal(discord.ui.Modal):
-    def __init__(self, format_requested: str):
-        super().__init__(title='Analyze Media Link')
-        self.format_requested = format_requested
-
-    url_input = discord.ui.TextInput(
-        label='Paste Link Here',
-        placeholder='YouTube, TikTok, X, Instagram...',
-        required=True
-    )
+    """Prompt for a URL when no link was auto-detected."""
+    def __init__(self, format_type):
+        super().__init__(title=f"Manually Download {format_type.capitalize()}")
+        self.format_type = format_type
+        self.url_input = discord.ui.TextInput(
+            label="Provide the media URL",
+            placeholder="https://www.youtube.com/watch?v=...",
+            required=True
+        )
+        self.add_item(self.url_input)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await start_analysis(interaction, self.url_input.value, self.format_requested)
+        await start_analysis(interaction, self.url_input.value, self.format_type)
 
 class DashboardView(discord.ui.View):
-    def __init__(self, url: str = None, trigger_message_id: int = None):
-        super().__init__(timeout=None)
+    """The central interactive hub for Fetchy."""
+    def __init__(self, url=None, trigger_message_id=None):
+        super().__init__(timeout=None)  # Persistent View
         self.url = url
         self.trigger_message_id = trigger_message_id
 
@@ -218,16 +246,20 @@ class DashboardView(discord.ui.View):
         else:
             await interaction.response.send_modal(DownloadModal("video"))
 
-    @discord.ui.button(label="🎵 Audio", style=discord.ButtonStyle.success, custom_id="fetchy_audio")
+    @discord.ui.button(label="🎵 Audio", style=discord.ButtonStyle.primary, custom_id="fetchy_audio")
     async def audio(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.url:
             await start_analysis(interaction, self.url, "audio", self.trigger_message_id, interaction.message.id)
         else:
             await interaction.response.send_modal(DownloadModal("audio"))
 
-    @discord.ui.button(label="🖼️ Picture", style=discord.ButtonStyle.secondary, custom_id="fetchy_picture")
+    @discord.ui.button(label="🖼️ Picture", style=discord.ButtonStyle.primary, custom_id="fetchy_picture")
     async def picture(self, interaction: discord.Interaction, button: discord.ui.Button):
         if self.url:
             await start_analysis(interaction, self.url, "picture", self.trigger_message_id, interaction.message.id)
         else:
             await interaction.response.send_modal(DownloadModal("picture"))
+
+    @discord.ui.button(label="❓ Support Info", style=discord.ButtonStyle.secondary, custom_id="fetchy_support")
+    async def support_info(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(embed=SupportInformationEmbed(), ephemeral=True)
