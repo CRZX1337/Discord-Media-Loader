@@ -65,6 +65,7 @@ def download_media(url, format_type, quality="1080", extension="mp3", status_hoo
     ydl_opts = {
         'quiet': True,
         'no_warnings': True,
+        'restrictfilenames': True,
         'outtmpl': output_tpl,
         'progress_hooks': [progress_handler],
     }

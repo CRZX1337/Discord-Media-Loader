@@ -2,6 +2,7 @@ import discord
 import logging
 import asyncio
 import os
+import urllib.parse
 from config import CONFIG
 import downloader
 
@@ -169,8 +170,9 @@ async def process_action(interaction: discord.Interaction, url: str, format_type
         # 3. HANDLE DELIVERY
         if file_size_mb > 10.0:
             filename = os.path.basename(file_path)
+            encoded_filename = urllib.parse.quote(filename)
             base_url = CONFIG.get("BASE_URL", "http://localhost:8080").rstrip('/')
-            download_url = f"{base_url}/downloads/{filename}"
+            download_url = f"{base_url}/downloads/{encoded_filename}"
             embed.title = "💾 File Ready (Large)"
             embed.description = f"This file was too large for Discord (>10MB).\n[**Click here to Download**]({download_url})\n\n*(File expires in 24 hours)*"
             embed.color = discord.Color.green()
