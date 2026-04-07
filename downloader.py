@@ -13,28 +13,46 @@ def sanitize_filename(name: str) -> str:
     # Remove excessive characters at the beginning/end
     return name.strip('_.-')
 
-def download_media(url: str, format_type: str) -> str:
+def download_media(url: str, format_type: str, quality: str = "1080", status_hook: callable = None) -> str:
     """
-    Downloads files synchronously via yt-dlp and grabs the true title.
-    Must ONLY be called from asyncio.to_thread within the bot context!
+    Downloads files synchronously via yt-dlp with live status updates.
     """
     temp_dir = os.path.join(os.getcwd(), "downloads")
     os.makedirs(temp_dir, exist_ok=True)
     
     # Generate unique ID for collision-free downloads
     unique_id = str(uuid.uuid4())[:8]
-    
-    # Real video title + unique_id mixed together to avoid overwriting same titles
     filepath_prefix = os.path.join(temp_dir, f'%(title)s_{unique_id}')
     
+    # Internal flag to ensure we only send a status update once per phase
+    current_phase = {"value": "SEARCHING"}
+    
+    def progress_handler(d):
+        if status_hook:
+            if d['status'] == 'downloading' and current_phase["value"] != "DOWNLOADING":
+                current_phase["value"] = "DOWNLOADING"
+                status_hook("DOWNLOADING")
+            elif d['status'] == 'finished' and current_phase["value"] != "PROCESSING":
+                current_phase["value"] = "PROCESSING"
+                status_hook("PROCESSING")
+
     ydl_opts = {
         'outtmpl': f'{filepath_prefix}.%(ext)s',
         'quiet': True,
         'no_warnings': True,
+        'progress_hooks': [progress_handler],
+    }
+    
+    # Quality Mapping
+    quality_map = {
+        "720": "bestvideo[height<=720]+bestaudio/best",
+        "1080": "bestvideo[height<=1080]+bestaudio/best",
+        "1440": "bestvideo[height<=1440]+bestaudio/best",
+        "2160": "bestvideo[height<=2160]+bestaudio/best"
     }
     
     if format_type == "video":
-        ydl_opts['format'] = 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+        ydl_opts['format'] = quality_map.get(quality, quality_map["1080"])
         ydl_opts['merge_output_format'] = 'mp4'
     elif format_type == "audio":
         ydl_opts['format'] = 'bestaudio/best'
@@ -52,9 +70,11 @@ def download_media(url: str, format_type: str) -> str:
         }]
 
     try:
+        if status_hook:
+            status_hook("SEARCHING")
+            
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Perform download and extraction
-            info = ydl.extract_info(url, download=True)
+            ydl.extract_info(url, download=True)
             
         # Search for file via the unique pattern ID
         files = glob.glob(os.path.join(temp_dir, f"*_{unique_id}.*"))

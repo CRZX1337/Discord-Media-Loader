@@ -8,9 +8,10 @@ from downloader import download_media
 logger = logging.getLogger("MediaBot")
 
 class DownloadModal(discord.ui.Modal):
-    def __init__(self, format_type: str):
+    def __init__(self, format_type: str, quality: str):
         super().__init__(title='Enter Media Link')
         self.format_type = format_type
+        self.quality = quality
 
     # Text input for the source URL
     url_input = discord.ui.TextInput(
@@ -22,20 +23,34 @@ class DownloadModal(discord.ui.Modal):
 
     async def on_submit(self, interaction: discord.Interaction):
         raw_format = self.format_type
+        loop = interaction.client.loop
         
         # 1. Ephemeral Response ("Please Wait" Status)
         embed = discord.Embed(
-            title=f"⏳ Preparing your {raw_format}...",
-            description="Just a moment while I process your request in the background... 🚀",
+            title=f"🎬 Fetchy | Preparing your {raw_format}",
+            description="🔄 Initializing request...",
             color=discord.Color.yellow()
         )
         await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        # Thread-safe callback for live status updates from downloader
+        async def update_status_ui(phase):
+            phase_map = {
+                "SEARCHING": "🔍 Searching for your content...",
+                "DOWNLOADING": "📥 Downloading media files...",
+                "PROCESSING": "⚙️ Finalizing and merging quality layers..."
+            }
+            embed.description = phase_map.get(phase, phase)
+            await interaction.edit_original_response(embed=embed)
+
+        def status_callback(status):
+            asyncio.run_coroutine_threadsafe(update_status_ui(status), loop)
         
         file_path = None
         try:
-            # 2. YTDLP must inevitably run in a thread; downloading the true filename
+            # 2. Extract and download with live hooks
             url = self.url_input.value
-            file_path = await asyncio.to_thread(download_media, url, raw_format)
+            file_path = await asyncio.to_thread(download_media, url, raw_format, self.quality, status_callback)
             
             # 3. Limit Checking for 10MB
             file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
@@ -46,7 +61,7 @@ class DownloadModal(discord.ui.Modal):
                 await interaction.edit_original_response(embed=embed, attachments=[])
             else:
                 embed.title = "✅ Your file is ready!"
-                embed.description = f"Handled with care. ✨\n\n*Support the project: [Star us on GitHub](https://github.com/CRZX1337/Fetchy)*"
+                embed.description = f"Handled with care at **{self.quality}p**. ✨\n\n*Support the project: [Star us on GitHub](https://github.com/CRZX1337/Fetchy)*"
                 embed.color = discord.Color.green()
                 
                 # Post file to the Interaction webhook
@@ -61,7 +76,6 @@ class DownloadModal(discord.ui.Modal):
             await interaction.edit_original_response(embed=embed, attachments=[])
             
         finally:
-            # 4. OS CLEANUP OF TMP FILES
             if file_path and os.path.exists(file_path):
                 try:
                     os.remove(file_path)
@@ -69,19 +83,38 @@ class DownloadModal(discord.ui.Modal):
                 except Exception as cleanup_err:
                     logger.error(f"Error deleting local file cache: {cleanup_err}")
 
+class QualitySelectView(discord.ui.View):
+    def __init__(self, format_type: str):
+        super().__init__(timeout=180)
+        self.format_type = format_type
+
+    @discord.ui.select(
+        placeholder="Choose your preferred quality...",
+        options=[
+            discord.SelectOption(label="720p", value="720", description="Standard HD - Balanced performance"),
+            discord.SelectOption(label="1080p", value="1080", description="Full HD - Recommended baseline", default=True),
+            discord.SelectOption(label="1440p (2K)", value="1440", description="Quad HD - For high-res displays"),
+            discord.SelectOption(label="2160p (4K)", value="2160", description="Ultra HD - Maximum fidelity")
+        ]
+    )
+    async def select_quality(self, interaction: discord.Interaction, select: discord.ui.Select):
+        quality = select.values[0]
+        # Transition to the URL input modal
+        await interaction.response.send_modal(DownloadModal(format_type=self.format_type, quality=quality))
+
 class DashboardView(discord.ui.View):
-    # timeout=None is mandatory so button clicks ALWAYS trigger (even after long idle times)
     def __init__(self):
         super().__init__(timeout=None)
         
     @discord.ui.button(label="🎥 Video (MP4)", style=discord.ButtonStyle.primary, custom_id="persistent_dashboard_btn_video")
     async def btn_video(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(DownloadModal(format_type="video"))
+        await interaction.response.send_message("Please select the desired video quality:", view=QualitySelectView("video"), ephemeral=True)
 
     @discord.ui.button(label="🎵 Audio (MP3)", style=discord.ButtonStyle.success, custom_id="persistent_dashboard_btn_audio")
     async def btn_audio(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(DownloadModal(format_type="audio"))
+        # Audio currently defaults to best, but we'll follow the flow
+        await interaction.response.send_message("High-quality audio extraction selected. Proceed to link:", view=QualitySelectView("audio"), ephemeral=True)
 
     @discord.ui.button(label="🖼️ Picture (PNG)", style=discord.ButtonStyle.secondary, custom_id="persistent_dashboard_btn_picture")
     async def btn_picture(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(DownloadModal(format_type="picture"))
+        await interaction.response.send_message("Original quality picture extraction selected. Proceed to link:", view=QualitySelectView("picture"), ephemeral=True)
