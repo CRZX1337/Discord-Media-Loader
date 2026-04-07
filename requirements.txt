@@ -2,16 +2,15 @@
 discord.py==2.3.2
 
 # Media downloader — intentionally NOT pinned!
-# yt-dlp must always be up-to-date for YouTube compatibility.
-# Pinning yt-dlp causes "Requested format is not available" errors
-# because YouTube regularly changes its available formats.
+# yt-dlp must always be up-to-date for YouTube/Instagram compatibility.
+# Pinning yt-dlp causes "Requested format is not available" errors.
 yt-dlp>=2025.1.1
 
 # Environment variable loading
 python-dotenv==1.0.0
 
-# Async HTTP client
+# Async HTTP client (kept for potential future use)
 aiohttp==3.9.0
 
-# Instagram media extraction
-instaloader==4.12.0
+# Instagram extraction — replaced by yt-dlp, kept for optional fallback
+# instaloader==4.12.0
