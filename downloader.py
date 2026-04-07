@@ -164,7 +164,14 @@ def _get_instaloader_instance():
         return L
     except Exception as e:
         logger.warning(f"Failed to load session ({e}), returning anonymous Instaloader.")
-        return L
+        return instaloader.Instaloader(
+            quiet=True,
+            download_pictures=False,
+            download_videos=False,
+            download_video_thumbnails=False,
+            save_metadata=False,
+            compress_json=False
+        )
 
 def get_instagram_carousel(url):
     """
