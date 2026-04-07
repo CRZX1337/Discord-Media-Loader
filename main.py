@@ -46,7 +46,6 @@ class MediaBot(commands.Bot):
         ]
 
     async def setup_hook(self):
-        """Called when the bot is starting."""
         self.add_view(DashboardView())
         self.status_rotation.start()
         self.cleanup_task.start()
@@ -55,13 +54,11 @@ class MediaBot(commands.Bot):
 
     @tasks.loop(seconds=CONFIG.get("STATUS_ROTATION_SPEED", 10))
     async def status_rotation(self):
-        """Rotates the bot's status message."""
         await self.change_presence(activity=discord.Game(name=self.statuses[self.status_index]))
         self.status_index = (self.status_index + 1) % len(self.statuses)
 
     @tasks.loop(hours=24)
     async def cleanup_task(self):
-        """Automatically cleans up the downloads folder every 24 hours."""
         logger.info("Running 24-hour cleanup task...")
         count = 0
         if os.path.exists("downloads"):
@@ -83,15 +80,12 @@ class MediaBot(commands.Bot):
     async def on_ready(self):
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
         logger.info(f"Targeting Channel ID: {CONFIG['CHANNEL_ID']}")
-
-        # Restore automatic dashboard posting
         channel = self.get_channel(CONFIG["CHANNEL_ID"])
         if channel:
             try:
                 await channel.purge(limit=100)
             except Exception:
                 pass
-            
             embed = discord.Embed(
                 title="📥 Fetchy | Your Personal Media Assistant",
                 description="I am here to assist you with high-performance media extraction and management. Enjoy a fully private and anonymous experience across all your interactions.\n\nHow to get started:\n1. Select a format below (Video, Audio, or Picture).\n2. Provide the source link in the secure input field.\n3. Choose your quality/format and I'll handle the rest! 🚀\n\n\n✨ Key Benefits: High Performance - Large File Support - Zero Tracking\n\n🖥️ Source Code: [GitHub Repository](https://github.com/CRZX1337/Fetchy)",
@@ -99,29 +93,89 @@ class MediaBot(commands.Bot):
             )
             embed.set_thumbnail(url="https://raw.githubusercontent.com/CRZX1337/Fetchy/main/media/logo.png")
             embed.set_footer(text="Handcrafted for efficiency - System fully operational")
-            
             await channel.send(embed=embed, view=DashboardView())
             logger.info("Dashboard posted successfully.")
 
     async def on_message(self, message):
-        # Ignore own messages
         if message.author == self.user:
             return
 
-        # Simple manual dashboard trigger
-        if message.content.lower() == "!dashboard":
+        cmd = message.content.strip().lower().split()[0] if message.content.strip() else ""
+        is_admin = message.author.guild_permissions.administrator
+
+        # !help
+        if cmd == "!help":
+            embed = discord.Embed(
+                title="📖 Fetchy — Commands",
+                description="All available commands:",
+                color=discord.Color.blurple()
+            )
+            embed.add_field(
+                name="🎛️ General",
+                value=(
+                    "`!help` — Show this overview\n"
+                    "`!dashboard` — Re-post the download dashboard\n"
+                    "`!status` — Show bot status and yt-dlp version"
+                ),
+                inline=False
+            )
+            if is_admin:
+                embed.add_field(
+                    name="🔧 Admin Only",
+                    value=(
+                        "`!update-ytdlp` — Update yt-dlp to the latest version\n"
+                        "`!cleanup` — Force-delete all files in the downloads folder"
+                    ),
+                    inline=False
+                )
+            embed.set_footer(text="Fetchy v1.4.0")
+            await message.reply(embed=embed, mention_author=False)
+            return
+
+        # !status
+        if cmd == "!status":
+            import yt_dlp as _ydl
+            ytdlp_version = _ydl.version.__version__
+            embed = discord.Embed(title="📊 Fetchy — Status", color=discord.Color.green())
+            embed.add_field(name="🤖 Bot", value="Online ✅", inline=True)
+            embed.add_field(name="📦 yt-dlp", value=f"`{ytdlp_version}`", inline=True)
+            embed.add_field(name="🐍 Version", value="Fetchy v1.4.0", inline=True)
+            await message.reply(embed=embed, mention_author=False)
+            return
+
+        # !dashboard
+        if cmd == "!dashboard":
             await message.channel.send(
                 content="Here is your permanent dashboard for media tasks!",
                 view=DashboardView()
             )
             return
 
-        # Admin: update yt-dlp to latest version
-        if message.content.lower() == "!update-ytdlp":
-            if not message.author.guild_permissions.administrator:
-                await message.reply("❌ You need administrator permissions for this command.")
+        # !cleanup (admin)
+        if cmd == "!cleanup":
+            if not is_admin:
+                await message.reply("❌ You need administrator permissions for this command.", mention_author=False)
                 return
-            msg = await message.reply("🔄 Updating yt-dlp...")
+            msg = await message.reply("🧹 Running cleanup...", mention_author=False)
+            count = 0
+            if os.path.exists("downloads"):
+                for filename in os.listdir("downloads"):
+                    file_path = os.path.join("downloads", filename)
+                    try:
+                        if os.path.isfile(file_path):
+                            os.remove(file_path)
+                            count += 1
+                    except Exception:
+                        pass
+            await msg.edit(content=f"✅ Cleanup done — deleted **{count}** file(s).")
+            return
+
+        # !update-ytdlp (admin)
+        if cmd == "!update-ytdlp":
+            if not is_admin:
+                await message.reply("❌ You need administrator permissions for this command.", mention_author=False)
+                return
+            msg = await message.reply("🔄 Updating yt-dlp...", mention_author=False)
             proc = await asyncio.create_subprocess_exec(
                 "pip", "install", "--upgrade", "yt-dlp",
                 stdout=asyncio.subprocess.PIPE,
@@ -130,16 +184,15 @@ class MediaBot(commands.Bot):
             stdout, stderr = await proc.communicate()
             if proc.returncode == 0:
                 version_line = [l for l in stdout.decode().splitlines() if "Successfully installed" in l]
-                info = version_line[0] if version_line else "yt-dlp updated."
+                info = version_line[0] if version_line else "yt-dlp is already up to date."
                 await msg.edit(content=f"✅ {info}")
             else:
                 await msg.edit(content=f"❌ Update failed:\n```{stderr.decode()[:500]}```")
             return
 
-        # Check for media links in the designated channel
+        # Auto-detect media links in the designated channel
         if message.channel.id == CONFIG['CHANNEL_ID']:
             if re.search(CONFIG['LINK_REGEX'], message.content):
-                # Send the dashboard as a reply to the link message
                 view = DashboardView(url=message.content, trigger_message_id=message.id)
                 await message.reply(
                     f"Hello, {message.author.display_name}! I noticed you shared a media link.\n"
@@ -150,7 +203,7 @@ class MediaBot(commands.Bot):
         await self.process_commands(message)
 
     async def on_command_error(self, ctx, error):
-        """Silently ignore unknown !commands instead of logging them as ERRORs."""
+        """Silently ignore unknown !commands."""
         if isinstance(error, commands.CommandNotFound):
             return
         raise error
@@ -158,9 +211,7 @@ class MediaBot(commands.Bot):
 # --- BOT ENTRYPOINT ---
 if __name__ == "__main__":
     load_dotenv()
-    # Check for both standard names
     token = os.getenv("DISCORD_TOKEN") or os.getenv("DISCORD_BOT_TOKEN")
-    
     if not token:
         logger.critical("No DISCORD_TOKEN or DISCORD_BOT_TOKEN found in your .env file!")
     else:
