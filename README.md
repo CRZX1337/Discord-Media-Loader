@@ -1,34 +1,46 @@
+<div align="center">
+
 ![Fetchy Banner](./media/banner.png)
 
-# 🚀 Fetchy — Your Personal Media Assistant
+[![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg)](https://github.com/CRZX1337/Fetchy)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/CRZX1337/Fetchy/blob/main/LICENSE)
+[![Powered by yt-dlp](https://img.shields.io/badge/powered%20by-yt--dlp-red.svg)](https://github.com/yt-dlp/yt-dlp)
+[![Built with Python 3.11](https://img.shields.io/badge/built%20with-Python%203.11-yellow.svg)](https://www.python.org/)
 
-Fetchy is a high-performance, privacy-focused Discord bot designed to download and manage media from various platforms seamlessly. Built with a modern modular architecture, Fetchy provides a clean, persistent dashboard for all your extraction needs.
+</div>
+
+# 🚀 Fetchy — Your Elite Personal Media Assistant
+
+Fetchy is a high-performance, privacy-focused Discord bot designed to extract and deliver media from across the web with unparalleled ease. Built on a modern asynchronous architecture, Fetchy provides a clean, automated environment for all your media needs.
 
 ---
 
 ## 📖 About Fetchy
 
-![Fetchy Logo](./media/logo.png)
+<div align="center">
+  <img src="./media/logo.png" alt="Fetchy Logo" width="200"/>
+</div>
 
-Fetchy was created to bridge the gap between complex media extraction tools and the ease of use of a Discord interface. Operating as a professional personal assistant, Fetchy handles the heavy lifting of processing and delivering media directly to your hands while ensuring your interactions remain completely private and anonymous.
+Fetchy was engineered to simplify the complex world of media extraction. Operating as a professional personal assistant, Fetchy handles everything from high-resolution 4K encoding to smart link detection, ensuring that your favorite content is always just a click away—all while maintaining absolute user anonymity.
 
 ---
 
 ## ✨ Key Features
 
-- 🎬 **Video Extraction:** High-quality MP4 downloads with automatic format merging.
-- 🎵 **Audio Extraction:** High-fidelity MP3 conversion for your favorite tracks.
-- 🖼️ **Picture Extraction:** High-resolution preview image extraction (PNG).
-- ⚡ **Asynchronous Processing:** Non-blocking operations ensure the system remains responsive.
-- 🛡️ **Privacy Centric:** Completely anonymous interactions with secure ephemeral responses.
-- 🧹 **Automated Infrastructure:** Integrated disk cleanup and Docker support for a maintenance-free experience.
+- 🎥 **Elite Quality Selection:** Choose your preferred resolution, from **720p** up to **Ultra HD 4K**.
+- 🔄 **Live Progress Tracking:** Stay informed with real-time status updates (*Searching*, *Downloading*, *Finalizing*).
+- 🧠 **Smart Link Detection:** Fetchy proactively notices media links in your channel and offers to assist immediately.
+- 🎬 **Full Format Support:** High-quality MP4 video, high-fidelity MP3 audio, and high-res PNG pictures.
+- ⚡ **Asynchronous Engine:** Non-blocking operations ensure the bot remains lightning-fast under load.
+- 🛡️ **Privacy First:** Every interaction is ephemeral and anonymous. No tracking, no logs, just media.
+- 🐳 **Docker Powered:** Fully containerized for easy deployment and zero-maintenance operation.
 
 ---
 
 ## 🚀 Getting Started
 
 ### 📦 Docker Deployment (Recommended)
-The most efficient way to deploy Fetchy is via Docker. This ensures a consistent environment with all required system dependencies pre-configured.
+The most efficient way to deploy Fetchy is via Docker.
 
 1. **Clone the Repository:**
    ```bash
@@ -42,7 +54,7 @@ The most efficient way to deploy Fetchy is via Docker. This ensures a consistent
    # Edit .env and supply your DISCORD_BOT_TOKEN
    ```
 
-3. **Deploy:**
+3. **Launch:**
    ```bash
    sudo docker compose up -d --build
    ```
@@ -50,18 +62,18 @@ The most efficient way to deploy Fetchy is via Docker. This ensures a consistent
 ---
 
 ### 💻 Local Installation
-If you prefer to run the system directly on your host machine:
+For direct host execution:
 
-1. **System Requirements:**
-   - Python 3.10+
-   - **FFmpeg** (Must be accessible in your system PATH)
+1. **Requirements:**
+   - Python 3.11+
+   - **FFmpeg** (Must be in your system PATH)
 
-2. **Install Dependencies:**
+2. **Install:**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Run the Application:**
+3. **Run:**
    ```bash
    python main.py
    ```
@@ -69,18 +81,17 @@ If you prefer to run the system directly on your host machine:
 ---
 
 ## 🛠️ How to Use
-Fetchy utilizes a centralized **Dashboard** for a streamlined experience:
+1. **Interactive Dashboard**: Click a format button and follow the quality selection prompts.
+2. **Auto-Detection**: Simply drop a supported link (YouTube, TikTok, X, Instagram) into the channel, and Fetchy will prompt you for the next steps.
+3. **Download**: Your file is delivered via a private ephemeral message.
 
-1. **Navigate** to your designated dashboard channel.
-2. **Select your format** using the interactive buttons (Video, Audio, or Picture).
-3. **Submit your link** in the secure modal popup.
-4. **Retrieve** your file directly from the private ephemeral response.
+---
 
 ## 📜 Credits & Technology
 Fetchy is built on the shoulders of these incredible open-source projects:
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — High-performance media extraction.
-- [discord.py](https://github.com/Rapptz/discord.py) — Modern Discord API wrapper.
-- [Docker](https://www.docker.com/) — Containerization and infrastructure management.
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) — The engine for media extraction.
+- [discord.py](https://github.com/Rapptz/discord.py) — The interface for Discord interactions.
+- [FFmpeg](https://ffmpeg.org/) — The power behind media conversion and merging.
 
 ---
 *Developed with care by [CRZX1337](https://github.com/CRZX1337/Fetchy)*
