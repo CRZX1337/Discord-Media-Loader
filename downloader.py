@@ -171,7 +171,15 @@ def get_instagram_carousel(url):
             if not post_id:
                 return []
 
-            n_entries = info.get('n_entries') or 0
+            entries_list = info.get('entries') or []
+            n_entries = (
+                info.get('n_entries')
+                or (entries_list[0].get('n_entries') if entries_list else 0)
+                or (entries_list[0].get('playlist_count') if entries_list else 0)
+                or len(entries_list)
+                or 0
+            )
+            logger.info(f"Resolved n_entries={n_entries}, entries_list len={len(entries_list)}")
             title = info.get('title', 'Instagram Photo')
 
             logger.info(f"post_id={post_id}, n_entries={n_entries}")
