@@ -12,7 +12,6 @@ services:
     volumes:
       # Save downloads persistently in a hosted folder (in case OS cleanup skips a beat)
       - ./downloads:/app/downloads
-      - ./config.json:/app/config.json
       - ./.env:/app/.env
       - ./cookies.txt:/app/cookies.txt
       - ./session:/app/session

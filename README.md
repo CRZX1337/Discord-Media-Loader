@@ -2,7 +2,7 @@
 
 ![Fetchy Banner](./media/banner.png)
 
-[![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg)](https://github.com/CRZX1337/Fetchy)
+[![Version](https://img.shields.io/badge/version-v1.4.0-blue.svg)](https://github.com/CRZX1337/Fetchy)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/CRZX1337/Fetchy/blob/master/LICENSE)
 [![Powered by yt-dlp](https://img.shields.io/badge/powered%20by-yt--dlp-red.svg)](https://github.com/yt-dlp/yt-dlp)
 [![Built with Python 3.11](https://img.shields.io/badge/built%20with-Python%203.11-yellow.svg)](https://www.python.org/)
@@ -28,10 +28,12 @@ Fetchy was engineered to simplify the complex world of media extraction. Operati
 ## ✨ Key Features
 
 - 🎥 **Elite Quality Selection:** Choose your preferred resolution, from **720p** up to **Ultra HD 4K**.
-- 🔄 **Live Progress Tracking:** Stay informed with real-time status updates (*Searching*, *Downloading*, *Finalizing*).
+- 🔄 **Live Progress Tracking:** Stay informed with real-time status updates including download percentage, size, and speed.
+- ❌ **Cancel Support:** Abort any active download instantly with a single button click.
 - 🧠 **Smart Link Detection:** Fetchy proactively notices media links in your channel and offers to assist immediately.
 - 🎬 **Full Format Support:** High-quality MP4 video, high-fidelity MP3 audio, and high-res PNG pictures.
 - 🧹 **Daily Auto-Cleanup:** Automated maintenance task that purges abandoned files to save disk space.
+- 🛡️ **URL Validation:** Protects against invalid or malicious inputs before any download begins.
 - 💬 **Detailed Error Feedback:** Human-friendly responses for private videos or unsupported platforms.
 - ⚡ **Asynchronous Engine:** Non-blocking operations ensure the bot remains lightning-fast under load.
 - 🛡️ **Privacy First:** Every interaction is ephemeral and anonymous. No tracking, no logs, just media.
@@ -41,12 +43,15 @@ Fetchy was engineered to simplify the complex world of media extraction. Operati
 
 ## ⚙️ Configuration
 
-Fetchy can be tuned via the `config.json` file in the root directory:
+Fetchy is configured entirely via the `.env` file in the root directory:
 
 | Key | Description | Default |
 | :--- | :--- | :--- |
-| `CHANNEL_ID` | The ID of the Discord channel for the dashboard. | `YOUR_DISCORD_CHANNEL_ID` |
+| `DISCORD_BOT_TOKEN` | Your Discord bot token. | *(required)* |
+| `CHANNEL_ID` | The ID of the Discord channel for the dashboard. | *(required)* |
 | `STATUS_ROTATION_SPEED` | Seconds between status changes. | `10` |
+| `BASE_URL` | Public URL for large-file downloads. | `http://YOUR_IP:8080` |
+| `INSTAGRAM_USERNAME` | Instagram username for session auth. | *(optional)* |
 | `LINK_REGEX` | Pattern for automatic link detection. | *(Common platforms)* |
 
 ---

@@ -40,7 +40,8 @@ class MediaBot(commands.Bot):
         self.statuses = [
             "Watching for links... 🔍",
             "Ready to download! 📽️",
-            "Helping users fetch media! ✨"
+            "Helping users fetch media! ✨",
+            "Type a link to get started! 🔗"
         ]
 
     async def setup_hook(self):
@@ -112,6 +113,26 @@ class MediaBot(commands.Bot):
                 content="Here is your permanent dashboard for media tasks!",
                 view=DashboardView()
             )
+            return
+
+        # Admin: update yt-dlp to latest version
+        if message.content.lower() == "!update-ytdlp":
+            if not message.author.guild_permissions.administrator:
+                await message.reply("❌ You need administrator permissions for this command.")
+                return
+            msg = await message.reply("🔄 Updating yt-dlp...")
+            proc = await asyncio.create_subprocess_exec(
+                "pip", "install", "--upgrade", "yt-dlp",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode == 0:
+                version_line = [l for l in stdout.decode().splitlines() if "Successfully installed" in l]
+                info = version_line[0] if version_line else "yt-dlp updated."
+                await msg.edit(content=f"✅ {info}")
+            else:
+                await msg.edit(content=f"❌ Update failed:\n```{stderr.decode()[:500]}```")
             return
 
         # Check for media links in the designated channel
