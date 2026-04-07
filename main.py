@@ -36,7 +36,7 @@ class MediaBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(command_prefix="!", intents=intents, help_command=None)
         self.status_index = 0
         self.statuses = [
             "Watching for links... 🔍",
@@ -50,6 +50,12 @@ class MediaBot(commands.Bot):
         self.status_rotation.start()
         self.cleanup_task.start()
         await start_server()
+        
+        from cogs.general import General
+        from cogs.admin import Admin
+        await self.add_cog(General(self))
+        await self.add_cog(Admin(self))
+        
         logger.info("Bot setup completed.")
 
     @tasks.loop(seconds=CONFIG.get("STATUS_ROTATION_SPEED", 10))
@@ -98,96 +104,6 @@ class MediaBot(commands.Bot):
 
     async def on_message(self, message):
         if message.author == self.user:
-            return
-
-        cmd = message.content.strip().lower().split()[0] if message.content.strip() else ""
-        is_admin = message.author.guild_permissions.administrator
-
-        # !help
-        if cmd == "!help":
-            embed = discord.Embed(
-                title="📖 Fetchy — Commands",
-                description="All available commands:",
-                color=discord.Color.blurple()
-            )
-            embed.add_field(
-                name="🎛️ General",
-                value=(
-                    "`!help` — Show this overview\n"
-                    "`!dashboard` — Re-post the download dashboard\n"
-                    "`!status` — Show bot status and yt-dlp version"
-                ),
-                inline=False
-            )
-            if is_admin:
-                embed.add_field(
-                    name="🔧 Admin Only",
-                    value=(
-                        "`!update-ytdlp` — Update yt-dlp to the latest version\n"
-                        "`!cleanup` — Force-delete all files in the downloads folder"
-                    ),
-                    inline=False
-                )
-            embed.set_footer(text="Fetchy v1.4.0")
-            await message.reply(embed=embed, mention_author=False)
-            return
-
-        # !status
-        if cmd == "!status":
-            import yt_dlp as _ydl
-            ytdlp_version = _ydl.version.__version__
-            embed = discord.Embed(title="📊 Fetchy — Status", color=discord.Color.green())
-            embed.add_field(name="🤖 Bot", value="Online ✅", inline=True)
-            embed.add_field(name="📦 yt-dlp", value=f"`{ytdlp_version}`", inline=True)
-            embed.add_field(name="🐍 Version", value="Fetchy v1.4.0", inline=True)
-            await message.reply(embed=embed, mention_author=False)
-            return
-
-        # !dashboard
-        if cmd == "!dashboard":
-            await message.channel.send(
-                content="Here is your permanent dashboard for media tasks!",
-                view=DashboardView()
-            )
-            return
-
-        # !cleanup (admin)
-        if cmd == "!cleanup":
-            if not is_admin:
-                await message.reply("❌ You need administrator permissions for this command.", mention_author=False)
-                return
-            msg = await message.reply("🧹 Running cleanup...", mention_author=False)
-            count = 0
-            if os.path.exists("downloads"):
-                for filename in os.listdir("downloads"):
-                    file_path = os.path.join("downloads", filename)
-                    try:
-                        if os.path.isfile(file_path):
-                            os.remove(file_path)
-                            count += 1
-                    except Exception:
-                        pass
-            await msg.edit(content=f"✅ Cleanup done — deleted **{count}** file(s).")
-            return
-
-        # !update-ytdlp (admin)
-        if cmd == "!update-ytdlp":
-            if not is_admin:
-                await message.reply("❌ You need administrator permissions for this command.", mention_author=False)
-                return
-            msg = await message.reply("🔄 Updating yt-dlp...", mention_author=False)
-            proc = await asyncio.create_subprocess_exec(
-                "pip", "install", "--upgrade", "yt-dlp",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await proc.communicate()
-            if proc.returncode == 0:
-                version_line = [l for l in stdout.decode().splitlines() if "Successfully installed" in l]
-                info = version_line[0] if version_line else "yt-dlp is already up to date."
-                await msg.edit(content=f"✅ {info}")
-            else:
-                await msg.edit(content=f"❌ Update failed:\n```{stderr.decode()[:500]}```")
             return
 
         # Auto-detect media links in the designated channel
