@@ -177,9 +177,11 @@ async def process_action(interaction: discord.Interaction, url: str, format_type
             await interaction.edit_original_response(embed=embed)
         else:
             file = discord.File(file_path)
-            await interaction.channel.send(content=f"✨ **Here is your {format_type}!** Enjoy!", file=file)
+            # Deliver the file ephemerally
+            await interaction.followup.send(content=f"✨ **Here is your {format_type}!** Enjoy!", file=file, ephemeral=True)
+            
             embed.title = "✅ Complete!"
-            embed.description = "Your file has been delivered to the channel."
+            embed.description = "Your file has been delivered privately to you. 🔐"
             embed.color = discord.Color.green()
             await interaction.edit_original_response(embed=embed)
             if os.path.exists(file_path):
