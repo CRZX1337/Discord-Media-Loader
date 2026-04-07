@@ -5,6 +5,9 @@ import logging
 import re
 import time
 import threading
+import subprocess
+import json
+import asyncio
 
 # --- LOGGING SETUP ---
 logger = logging.getLogger("MediaBot.Downloader")
@@ -155,88 +158,146 @@ def download_media(url, format_type, quality="1080", extension="mp3", status_hoo
         raise e
 
 
-def get_instagram_carousel(url):
-    """
-    Extracts carousel/single entries from an Instagram post or reel using yt-dlp.
-    Returns a list of dicts: [{'index': 1, 'url': '...', 'title': '...', 'ext': 'jpg', 'media_type': 'image'}, ...]
-    No Instaloader / no Instagram account required.
-    """
-    logger.info(f"Extracting Instagram carousel via yt-dlp for {url}")
+# ---------------------------------------------------------------------------
+# Instagram helpers
+# ---------------------------------------------------------------------------
 
-    clean_url = re.sub(r'[?&]img_index=\d+', '', url)
+def _is_instagram_video_url(url: str) -> bool:
+    """Returns True if the URL is clearly a Reel (video). Image posts are /p/."""
+    return bool(re.search(r'instagram\.com/(?:reel|tv)/', url))
 
+
+def _gallery_dl_available() -> bool:
+    """Check if gallery-dl is installed in the container."""
+    try:
+        result = subprocess.run(["gallery-dl", "--version"], capture_output=True, timeout=5)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def _get_instagram_entries_via_gallery_dl(url: str) -> list:
+    """
+    Uses gallery-dl to extract Instagram image carousel entries.
+    Returns list of dicts with keys: index, url, title, ext, media_type
+    """
+    logger.info(f"Extracting Instagram post via gallery-dl: {url}")
+    try:
+        cmd = ["gallery-dl", "--dump-json", url]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            logger.warning(f"gallery-dl exited with code {result.returncode}: {result.stderr[:300]}")
+            return []
+
+        entries = []
+        for line in result.stdout.strip().splitlines():
+            try:
+                item = json.loads(line)
+                # gallery-dl outputs [version, category_info, url_string] or similar
+                # For Instagram it outputs [version, post_info, image_url]
+                if isinstance(item, list) and len(item) >= 3:
+                    media_url = item[2] if isinstance(item[2], str) else None
+                    if not media_url:
+                        continue
+                    ext = media_url.split('?')[0].rsplit('.', 1)[-1].lower() if '.' in media_url else 'jpg'
+                    if ext not in ('jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov'):
+                        ext = 'jpg'
+                    media_type = 'video' if ext in ('mp4', 'mov') else 'image'
+                    post_info = item[1] if isinstance(item[1], dict) else {}
+                    title = post_info.get('description', 'Instagram Post')[:100]
+                    entries.append({
+                        'index': len(entries) + 1,
+                        'url': media_url,
+                        'title': title,
+                        'ext': ext,
+                        'media_type': media_type,
+                    })
+            except (json.JSONDecodeError, IndexError):
+                continue
+
+        logger.info(f"gallery-dl found {len(entries)} entries")
+        return entries
+    except subprocess.TimeoutExpired:
+        logger.error("gallery-dl timed out")
+        return []
+    except Exception as e:
+        logger.error(f"gallery-dl extraction failed: {e}")
+        return []
+
+
+def _get_instagram_entries_via_ytdlp(url: str) -> list:
+    """
+    Uses yt-dlp to extract Instagram Reel/video entries.
+    Only suitable for video content.
+    """
+    logger.info(f"Extracting Instagram reel via yt-dlp: {url}")
     ydl_opts = _ydl_opts_base()
     ydl_opts['extract_flat'] = False
-
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(clean_url, download=False)
+            info = ydl.extract_info(url, download=False)
 
         entries = []
         title = info.get('title', 'Instagram Post')[:100]
 
-        # Playlist = carousel (multiple entries)
         if info.get('_type') == 'playlist' and info.get('entries'):
-            logger.info(f"Carousel detected: {len(info['entries'])} entries")
             for i, entry in enumerate(info['entries'], start=1):
                 if not entry:
                     continue
-                is_video = bool(entry.get('formats') and any(
-                    f.get('vcodec', 'none') != 'none' for f in entry.get('formats', [])
-                ))
-                # Best direct URL: use the highest quality thumbnail for images, direct url for videos
-                if is_video:
-                    media_url = entry.get('url') or _best_video_url(entry)
-                    ext = 'mp4'
-                    media_type = 'video'
-                else:
-                    media_url = _best_image_url(entry)
-                    ext = 'jpg'
-                    media_type = 'image'
-
+                media_url = _best_video_url(entry) or entry.get('url')
                 if media_url:
                     entries.append({
                         'index': i,
                         'url': media_url,
                         'title': entry.get('title', title)[:100],
-                        'ext': ext,
-                        'media_type': media_type,
+                        'ext': 'mp4',
+                        'media_type': 'video',
                     })
-                    logger.info(f"Carousel entry {i}: {media_type}")
         else:
-            # Single post or reel
-            logger.info("Single Instagram post/reel detected")
-            is_video = bool(info.get('formats') and any(
-                f.get('vcodec', 'none') != 'none' for f in info.get('formats', [])
-            ))
-            if is_video:
-                media_url = info.get('url') or _best_video_url(info)
-                ext = 'mp4'
-                media_type = 'video'
-            else:
-                media_url = _best_image_url(info)
-                ext = 'jpg'
-                media_type = 'image'
-
+            media_url = _best_video_url(info) or info.get('url')
             if media_url:
                 entries.append({
                     'index': 1,
                     'url': media_url,
                     'title': title,
-                    'ext': ext,
-                    'media_type': media_type,
+                    'ext': 'mp4',
+                    'media_type': 'video',
                 })
 
-        logger.info(f"Found {len(entries)} Instagram entries via yt-dlp")
+        logger.info(f"yt-dlp found {len(entries)} video entries")
         return entries
-
     except Exception as e:
-        logger.error(f"get_instagram_carousel failed: {e}")
+        logger.error(f"yt-dlp Instagram extraction failed: {e}")
         return []
 
 
+def get_instagram_carousel(url: str) -> list:
+    """
+    Smart router:
+    - Reels/TV  -> yt-dlp (video)
+    - Image posts (/p/) -> gallery-dl first, yt-dlp fallback
+    Returns list of dicts: [{'index', 'url', 'title', 'ext', 'media_type'}, ...]
+    """
+    clean_url = re.sub(r'[?&]img_index=\d+', '', url)
+
+    if _is_instagram_video_url(clean_url):
+        logger.info("Routing to yt-dlp (Reel/TV)")
+        return _get_instagram_entries_via_ytdlp(clean_url)
+
+    # Image post — try gallery-dl first
+    if _gallery_dl_available():
+        logger.info("Routing to gallery-dl (image post)")
+        entries = _get_instagram_entries_via_gallery_dl(clean_url)
+        if entries:
+            return entries
+        logger.warning("gallery-dl returned no entries, falling back to yt-dlp")
+
+    # Fallback: yt-dlp (works for mixed video/image carousels sometimes)
+    logger.info("Falling back to yt-dlp for Instagram post")
+    return _get_instagram_entries_via_ytdlp(clean_url)
+
+
 def _best_video_url(info: dict) -> str | None:
-    """Returns the best video URL from a yt-dlp info dict."""
     formats = info.get('formats', [])
     video_formats = [f for f in formats if f.get('vcodec', 'none') != 'none' and f.get('url')]
     if not video_formats:
@@ -244,27 +305,12 @@ def _best_video_url(info: dict) -> str | None:
     return max(video_formats, key=lambda f: f.get('height') or 0).get('url')
 
 
-def _best_image_url(info: dict) -> str | None:
-    """Returns the best image URL from a yt-dlp info dict (thumbnail or direct url)."""
-    # For image posts yt-dlp usually puts the URL directly in info['url']
-    direct = info.get('url')
-    if direct and not direct.endswith('.mp4'):
-        return direct
-    # Fallback: largest thumbnail
-    thumbnails = info.get('thumbnails', [])
-    if thumbnails:
-        best = max(thumbnails, key=lambda t: (t.get('width') or 0) * (t.get('height') or 0))
-        return best.get('url')
-    return info.get('thumbnail')
-
-
 async def download_instagram_photo(url, index=None):
     """
     Downloads one or all media items from an Instagram post/carousel.
-    Uses yt-dlp directly to download — no aiohttp, no Instaloader.
+    Uses gallery-dl for image posts, yt-dlp for videos/reels.
     Returns list of file paths.
     """
-    import asyncio
     entries = get_instagram_carousel(url)
     if not entries:
         return []
@@ -279,37 +325,56 @@ async def download_instagram_photo(url, index=None):
             ext = entry.get('ext', 'jpg')
             out_path = f"downloads/ig_{entry['index']}_{unique_id}.{ext}"
 
-            ydl_opts = _ydl_opts_base()
-            ydl_opts.update({
-                'outtmpl': out_path,
-                'restrictfilenames': True,
-            })
+            media_url = entry['url']
 
-            # yt-dlp needs to re-extract to download; pass the entry URL directly
-            entry_url = entry['url']
+            if entry.get('media_type') == 'video':
+                # Use yt-dlp to download video URL directly
+                ydl_opts = _ydl_opts_base()
+                ydl_opts['outtmpl'] = out_path
 
-            def _download():
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    # Download directly from CDN URL (already resolved)
-                    ydl.download([entry_url])
+                def _dl_video():
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([media_url])
 
-            await asyncio.to_thread(_download)
+                await asyncio.to_thread(_dl_video)
+            else:
+                # Image: download directly via gallery-dl to out_path
+                cmd = ["gallery-dl", "--dest", "downloads/",
+                       "--filename", os.path.basename(out_path), media_url]
 
-            # yt-dlp may adjust extension; find the actual file
-            actual = out_path
-            if not os.path.exists(actual):
-                # Search for file matching the unique_id prefix
-                candidates = [
-                    os.path.join("downloads", f)
-                    for f in os.listdir("downloads")
-                    if unique_id in f
-                ]
-                if candidates:
-                    actual = candidates[0]
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL
+                )
+                await asyncio.wait_for(proc.wait(), timeout=30)
 
-            if os.path.exists(actual):
-                results.append(actual)
-                logger.info(f"Downloaded Instagram entry {entry['index']}: {actual}")
+                # gallery-dl may name the file differently; find it by unique_id
+                if not os.path.exists(out_path):
+                    candidates = [
+                        os.path.join("downloads", f)
+                        for f in os.listdir("downloads")
+                        if unique_id in f
+                    ]
+                    if candidates:
+                        out_path = candidates[0]
+                    else:
+                        # Last resort: download with aiohttp directly
+                        import aiohttp
+                        headers = {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                            'Referer': 'https://www.instagram.com/',
+                        }
+                        async with aiohttp.ClientSession(headers=headers) as session:
+                            async with session.get(media_url) as resp:
+                                if resp.status == 200:
+                                    content = await resp.read()
+                                    with open(out_path, 'wb') as f:
+                                        f.write(content)
+
+            if os.path.exists(out_path):
+                results.append(out_path)
+                logger.info(f"Downloaded Instagram entry {entry['index']}: {out_path}")
             else:
                 logger.warning(f"File not found after download for entry {entry['index']}")
 

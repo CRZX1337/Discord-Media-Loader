@@ -3,14 +3,14 @@ discord.py==2.3.2
 
 # Media downloader — intentionally NOT pinned!
 # yt-dlp must always be up-to-date for YouTube/Instagram compatibility.
-# Pinning yt-dlp causes "Requested format is not available" errors.
 yt-dlp>=2025.1.1
 
 # Environment variable loading
 python-dotenv==1.0.0
 
-# Async HTTP client (kept for potential future use)
+# Async HTTP client (fallback image downloader)
 aiohttp==3.9.0
 
-# Instagram extraction — replaced by yt-dlp, kept for optional fallback
-# instaloader==4.12.0
+# gallery-dl is installed separately in Dockerfile (not via pip here)
+# It handles Instagram image posts which yt-dlp does not support.
+# See Dockerfile: RUN pip install gallery-dl
