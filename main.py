@@ -51,17 +51,20 @@ class MediaBot(commands.Bot):
             return
 
         if message.channel.id == CHANNEL_ID:
-            if re.search(LINK_REGEX, message.content, re.IGNORECASE):
-                logger.info(f"Media link detected from {message.author}: {message.content}")
+            match = re.search(LINK_REGEX, message.content, re.IGNORECASE)
+            if match:
+                detected_url = match.group(0)
+                logger.info(f"Media link detected from {message.author}: {detected_url}")
                 prompt_text = (
                     f"👋 Hello, {message.author.display_name}! I noticed you shared a media link.\n"
                     "Would you like me to process that for you? Just pick a format below! 🚀"
                 )
-                await message.reply(prompt_text, view=DashboardView(), delete_after=300)
+                await message.reply(prompt_text, view=DashboardView(url=detected_url), delete_after=300)
 
         await self.process_commands(message)
 
     async def setup_hook(self):
+        # The persistent view for the dashboard shouldn't have a pre-filled URL
         self.add_view(DashboardView())
         
         # Start the Static File Server
@@ -122,7 +125,6 @@ class MediaBot(commands.Bot):
         if not self.cleanup_task.is_running():
             self.cleanup_task.start()
 
-        # Dashboard posting logic remains exactly as is...
         channel = self.get_channel(CHANNEL_ID)
         if channel:
             try:
