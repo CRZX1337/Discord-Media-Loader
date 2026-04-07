@@ -14,4 +14,4 @@ services:
       - ./downloads:/app/downloads
       - ./config.json:/app/config.json
       - ./.env:/app/.env
-      - ./session:/app/session
+      - ./cookies.txt:/app/cookies.txt
