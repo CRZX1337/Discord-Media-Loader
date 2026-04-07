@@ -3,6 +3,7 @@ import logging
 import asyncio
 import threading
 import os
+import time
 import urllib.parse
 from config import CONFIG
 import downloader
@@ -22,6 +23,7 @@ logger = logging.getLogger("MediaBot.UI")
 # --- RATE LIMITING ---
 active_downloads = {}  # user_id -> count
 MAX_CONCURRENT_PER_USER = 2
+_user_cooldowns: dict[int, float] = {}
 
 class SupportInformationEmbed(discord.Embed):
     """Custom embed for supported sites."""
@@ -110,6 +112,15 @@ class InstagramCarouselView(discord.ui.View):
 
     def create_callback(self, index):
         async def callback(interaction: discord.Interaction):
+            elapsed = time.time() - _user_cooldowns.get(interaction.user.id, 0)
+            if elapsed < 30:
+                wait = int(30 - elapsed)
+                return await interaction.response.send_message(
+                    f"⏳ Please wait **{wait}s** before starting a new download.",
+                    ephemeral=True
+                )
+            _user_cooldowns[interaction.user.id] = time.time()
+
             if not interaction.response.is_done():
                 await interaction.response.send_message(f"⌛ Downloading Photo {index}...", ephemeral=True)
             
@@ -123,6 +134,15 @@ class InstagramCarouselView(discord.ui.View):
         return callback
 
     async def download_all_callback(self, interaction: discord.Interaction):
+        elapsed = time.time() - _user_cooldowns.get(interaction.user.id, 0)
+        if elapsed < 30:
+            wait = int(30 - elapsed)
+            return await interaction.response.send_message(
+                f"⏳ Please wait **{wait}s** before starting a new download.",
+                ephemeral=True
+            )
+        _user_cooldowns[interaction.user.id] = time.time()
+
         if not interaction.response.is_done():
             await interaction.response.send_message(f"⌛ Downloading all {len(self.entries)} photos...", ephemeral=True)
         
@@ -357,6 +377,14 @@ class DownloadModal(discord.ui.Modal):
         if not is_valid_url(url):
             await interaction.response.send_message("❌ Invalid URL! Please provide a valid http or https link.", ephemeral=True)
             return
+        elapsed = time.time() - _user_cooldowns.get(interaction.user.id, 0)
+        if elapsed < 30:
+            wait = int(30 - elapsed)
+            return await interaction.response.send_message(
+                f"⏳ Please wait **{wait}s** before starting a new download.",
+                ephemeral=True
+            )
+        _user_cooldowns[interaction.user.id] = time.time()
         await start_analysis(interaction, url, self.format_type)
 
 class DashboardView(discord.ui.View):
@@ -368,6 +396,14 @@ class DashboardView(discord.ui.View):
 
     @discord.ui.button(label="🎥 Video", style=discord.ButtonStyle.primary, custom_id="fetchy_video")
     async def video(self, interaction: discord.Interaction, button: discord.ui.Button):
+        elapsed = time.time() - _user_cooldowns.get(interaction.user.id, 0)
+        if elapsed < 30:
+            wait = int(30 - elapsed)
+            return await interaction.response.send_message(
+                f"⏳ Please wait **{wait}s** before starting a new download.",
+                ephemeral=True
+            )
+        _user_cooldowns[interaction.user.id] = time.time()
         if self.url:
             await start_analysis(interaction, self.url, "video", self.trigger_message_id, interaction.message.id)
         else:
@@ -375,6 +411,14 @@ class DashboardView(discord.ui.View):
 
     @discord.ui.button(label="🎵 Audio", style=discord.ButtonStyle.primary, custom_id="fetchy_audio")
     async def audio(self, interaction: discord.Interaction, button: discord.ui.Button):
+        elapsed = time.time() - _user_cooldowns.get(interaction.user.id, 0)
+        if elapsed < 30:
+            wait = int(30 - elapsed)
+            return await interaction.response.send_message(
+                f"⏳ Please wait **{wait}s** before starting a new download.",
+                ephemeral=True
+            )
+        _user_cooldowns[interaction.user.id] = time.time()
         if self.url:
             await start_analysis(interaction, self.url, "audio", self.trigger_message_id, interaction.message.id)
         else:
@@ -382,6 +426,14 @@ class DashboardView(discord.ui.View):
 
     @discord.ui.button(label="🖼️ Picture", style=discord.ButtonStyle.primary, custom_id="fetchy_picture")
     async def picture(self, interaction: discord.Interaction, button: discord.ui.Button):
+        elapsed = time.time() - _user_cooldowns.get(interaction.user.id, 0)
+        if elapsed < 30:
+            wait = int(30 - elapsed)
+            return await interaction.response.send_message(
+                f"⏳ Please wait **{wait}s** before starting a new download.",
+                ephemeral=True
+            )
+        _user_cooldowns[interaction.user.id] = time.time()
         if self.url:
             await start_analysis(interaction, self.url, "picture", self.trigger_message_id, interaction.message.id)
         else:
