@@ -14,7 +14,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Kopiere den restlichen Code
-COPY bot.py .
+COPY downloader.py ui.py main.py ./
 
 # Führe den Bot aus
-CMD ["python", "bot.py"]
+CMD ["python", "main.py"]
