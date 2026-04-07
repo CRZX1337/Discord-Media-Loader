@@ -31,9 +31,23 @@ Fetchy was engineered to simplify the complex world of media extraction. Operati
 - 🔄 **Live Progress Tracking:** Stay informed with real-time status updates (*Searching*, *Downloading*, *Finalizing*).
 - 🧠 **Smart Link Detection:** Fetchy proactively notices media links in your channel and offers to assist immediately.
 - 🎬 **Full Format Support:** High-quality MP4 video, high-fidelity MP3 audio, and high-res PNG pictures.
+- 🧹 **Daily Auto-Cleanup:** Automated maintenance task that purges abandoned files to save disk space.
+- 💬 **Detailed Error Feedback:** Human-friendly responses for private videos or unsupported platforms.
 - ⚡ **Asynchronous Engine:** Non-blocking operations ensure the bot remains lightning-fast under load.
 - 🛡️ **Privacy First:** Every interaction is ephemeral and anonymous. No tracking, no logs, just media.
 - 🐳 **Docker Powered:** Fully containerized for easy deployment and zero-maintenance operation.
+
+---
+
+## ⚙️ Configuration
+
+Fetchy can be tuned via the `config.json` file in the root directory:
+
+| Key | Description | Default |
+| :--- | :--- | :--- |
+| `CHANNEL_ID` | The ID of the Discord channel for the dashboard. | `1491040447370362980` |
+| `STATUS_ROTATION_SPEED` | Seconds between status changes. | `10` |
+| `LINK_REGEX` | Pattern for automatic link detection. | *(Common platforms)* |
 
 ---
 

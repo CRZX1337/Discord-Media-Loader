@@ -128,3 +128,22 @@ class DashboardView(discord.ui.View):
     @discord.ui.button(label="🖼️ Picture (PNG)", style=discord.ButtonStyle.secondary, custom_id="persistent_dashboard_btn_picture")
     async def btn_picture(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.send_message("Original quality picture extraction selected. Proceed to link:", view=QualitySelectView("picture"), ephemeral=True)
+
+    @discord.ui.button(label="❓ Supported Sites", style=discord.ButtonStyle.gray, custom_id="persistent_dashboard_btn_help")
+    async def btn_help(self, interaction: discord.Interaction, button: discord.ui.Button):
+        help_embed = discord.Embed(
+            title="🌐 Fetchy | Supported Platforms",
+            description=(
+                "I support high-quality extraction from hundreds of platforms! "
+                "Here are the most popular ones:\n\n"
+                "• **YouTube** (Videos, Shorts, Music)\n"
+                "• **TikTok** (No watermark where possible)\n"
+                "• **Twitter / X**\n"
+                "• **Instagram** (Reels, Posts)\n"
+                "• **Twitch** (Clips)\n"
+                "• **SoundCloud**\n\n"
+                "✨ **Pro Tip:** If you have a link, just try it! There's a good chance I can handle it. 🚀"
+            ),
+            color=discord.Color.blue()
+        )
+        await interaction.response.send_message(embed=help_embed, ephemeral=True)
