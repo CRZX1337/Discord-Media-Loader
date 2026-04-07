@@ -1,7 +1,8 @@
 import os
 import logging
+import itertools
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 # Import our clean UI architecture
@@ -18,6 +19,14 @@ CHANNEL_ID = 1491040447370362980
 class MediaBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=discord.Intents.default())
+        
+        # Rotating status activities
+        self.activities = itertools.cycle([
+            discord.Activity(type=discord.ActivityType.watching, name="over the Dashboard ✨"),
+            discord.Activity(type=discord.ActivityType.listening, name="to 🎵 Audio extractions"),
+            discord.Activity(type=discord.ActivityType.playing, name="🎬 with Media files"),
+            discord.Activity(type=discord.ActivityType.watching, name="out for new Links 🚀")
+        ])
 
     async def setup_hook(self):
         # 1. Essential for keeping button functionality after bot restarts:
@@ -27,8 +36,18 @@ class MediaBot(commands.Bot):
         await self.tree.sync()
         logger.info("Bot setup complete. Dashboard View registered successfully.")
 
+    @tasks.loop(seconds=10)
+    async def status_task(self):
+        """Task to rotate bot status every 10 seconds."""
+        await self.change_presence(activity=next(self.activities))
+
     async def on_ready(self):
         logger.info(f"Bot is online as {self.user} (ID: {self.user.id})")
+        
+        # Start the background status task if it's not already running
+        if not self.status_task.is_running():
+            self.status_task.start()
+            logger.info("Dynamic status rotation started.")
         
         # 2. Setup the dedicated Dashboard Channel
         channel = self.get_channel(CHANNEL_ID)
@@ -62,8 +81,6 @@ class MediaBot(commands.Bot):
             logger.info("Dashboard successfully posted to the channel.")
         else:
             logger.error(f"ERROR: Channel with ID {CHANNEL_ID} was not found on this server!")
-            
-        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name="over the Dashboard ✨"))
 
 # --- BOT ENTRYPOINT ---
 if __name__ == "__main__":
