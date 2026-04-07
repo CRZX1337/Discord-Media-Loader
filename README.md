@@ -8,7 +8,7 @@
 [![Built with Python 3.11](https://img.shields.io/badge/built%20with-Python%203.11-yellow.svg)](https://www.python.org/)
 
 </div>
-
+ 
 # 🚀 Fetchy — Your Elite Personal Media Assistant
 
 Fetchy is a high-performance, privacy-focused Discord bot designed to extract and deliver media from across the web with unparalleled ease. Built on a modern asynchronous architecture, Fetchy provides a clean, automated environment for all your media needs.
