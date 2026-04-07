@@ -82,11 +82,12 @@ def download_media(url, format_type, quality="1080", extension="mp3", status_hoo
             'preferredquality': '192',
         }]
     elif format_type == "picture":
-        # Note: yt-dlp generally downloads the 'best' available source.
-        ydl_opts['format'] = 'best'
+        # Strategy: Fetch highest quality thumbnail
+        ydl_opts['writethumbnail'] = True
+        ydl_opts['skip_download'] = True
         ydl_opts['postprocessors'] = [{
-            'key': 'FFmpegVideoConvertor',
-            'preferedformat': extension,
+            'key': 'FFmpegThumbnailsConvertor',
+            'format': extension, # png, jpg, webp
         }]
 
     try:

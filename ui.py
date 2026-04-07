@@ -79,7 +79,7 @@ class QualitySelectView(discord.ui.View):
 
     async def on_select(self, interaction: discord.Interaction):
         quality = interaction.data['values'][0]
-        await process_action(interaction, self.view.url, "video", quality=quality, trigger_message_id=self.view.trigger_message_id, prompt_message_id=self.view.prompt_message_id)
+        await process_action(interaction, self.url, "video", quality=quality, trigger_message_id=self.trigger_message_id, prompt_message_id=self.prompt_message_id)
 
 class AudioFormatView(discord.ui.View):
     """Format selection for Audio."""
@@ -145,7 +145,7 @@ async def process_action(interaction: discord.Interaction, url: str, format_type
             await interaction.edit_original_response(content=None, embed=embed, view=None)
 
         # 2. RUN DOWNLOAD with status hook
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         
         async def update_status_ui(phase):
             mapping = {
