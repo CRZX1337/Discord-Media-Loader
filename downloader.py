@@ -194,6 +194,13 @@ def get_instagram_carousel(url):
                     try:
                         item_info = ydl.extract_info(item_url, download=False)
                         logger.info(f"item_info keys: {list(item_info.keys()) if item_info else 'None'} | thumbnails={len(item_info.get('thumbnails', []))} | thumbnail={item_info.get('thumbnail')} | url={item_info.get('url')}")
+                        
+                        # If yt-dlp returns a playlist wrapper, dig into the first entry 
+                        if item_info.get('_type') == 'playlist' or 'entries' in item_info: 
+                            sub_entries = item_info.get('entries') or [] 
+                            if sub_entries: 
+                                item_info = sub_entries[0] 
+                        
                         thumbnails = item_info.get('thumbnails', [])
                         img_url = thumbnails[-1].get('url') if thumbnails else (item_info.get('thumbnail') or item_info.get('url'))
                         if not img_url:
@@ -210,6 +217,13 @@ def get_instagram_carousel(url):
                 # Single photo logic
                 ydl.params['extract_flat'] = False
                 item_info = ydl.extract_info(base_url, download=False)
+                
+                # If yt-dlp returns a playlist wrapper, dig into the first entry 
+                if item_info.get('_type') == 'playlist' or 'entries' in item_info: 
+                    sub_entries = item_info.get('entries') or [] 
+                    if sub_entries: 
+                        item_info = sub_entries[0] 
+                
                 thumbnails = item_info.get('thumbnails', [])
                 img_url = thumbnails[-1].get('url') if thumbnails else (item_info.get('thumbnail') or item_info.get('url'))
                 if img_url:
