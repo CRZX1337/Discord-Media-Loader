@@ -33,7 +33,9 @@ LINK_REGEX = CONFIG.get("LINK_REGEX")
 
 class MediaBot(commands.Bot):
     def __init__(self):
-        super().__init__(command_prefix="!", intents=discord.Intents.all()) # Enabled all intents for on_message
+        intents = discord.Intents.default()
+        intents.message_content = True
+        super().__init__(command_prefix="!", intents=intents)
         
         # Rotating status activities
         self.activities = itertools.cycle([
