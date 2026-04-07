@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  discord-bot:
+    build: .
+    container_name: media-downloader-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Speichere die Downloads persistent im Ordner auf dem Host-System (falls mal nicht aufgeräumt wird)
+      - ./downloads:/app/downloads
