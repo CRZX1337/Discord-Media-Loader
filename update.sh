@@ -108,9 +108,31 @@ bg_run() {
 
 bg_wait() {
   local name="$1" pid="$2" label="$3"
+  shift 3
+  local activities=("$@")
+  
   spinner_start "$label"
+  
+  # Play typewriter activities while spinner runs in background
+  for activity in "${activities[@]}"; do
+    if [[ -z "$activity" ]]; then
+      continue
+    fi
+    printf "  ${DIM}"
+    typewriter "$activity" 0.03 &
+    local typewriter_pid=$!
+    
+    # Let typewriter play, but check if job finishes early
+    while kill -0 "$typewriter_pid" 2>/dev/null; do
+      sleep 0.05
+    done
+    wait "$typewriter_pid" 2>/dev/null || true
+  done
+  
+  # Wait for background job to actually complete
   wait "$pid" 2>/dev/null || true
   spinner_stop
+  
   if [[ -f "${BG_STATUS}/${name}.fail" ]]; then
     step_fail "$label"
     echo -e "\n${RED}${BOLD}  Error output:${RESET}"
@@ -257,14 +279,10 @@ echo ""
 
 GIT_PID=$(bg_run "git_pull" git pull --ff-only)
 
-printf "  ${DIM}"
-typewriter "Contacting remote repository..." 0.03
-printf "  ${DIM}"
-typewriter "Checking for new commits..." 0.025
-printf "  ${DIM}"
-typewriter "Verifying integrity..." 0.03
-
-bg_wait "git_pull" "$GIT_PID" "Syncing with remote repository"
+bg_wait "git_pull" "$GIT_PID" "Syncing with remote repository" \
+  "Contacting remote repository..." \
+  "Checking for new commits..." \
+  "Verifying integrity..."
 echo ""
 
 # ——— CHANGELOG: show what just got pulled ———
@@ -281,18 +299,12 @@ echo ""
 
 BUILD_PID=$(bg_run "docker_build" sudo docker compose build)
 
-printf "  ${DIM}"
-typewriter "Pulling base layers..." 0.04
-printf "  ${DIM}"
-typewriter "Resolving dependencies..." 0.035
-printf "  ${DIM}"
-typewriter "Compiling image filesystem..." 0.03
-printf "  ${DIM}"
-typewriter "Applying patches..." 0.04
-printf "  ${DIM}"
-typewriter "Optimising layer cache..." 0.03
-
-bg_wait "docker_build" "$BUILD_PID" "Building Docker infrastructure"
+bg_wait "docker_build" "$BUILD_PID" "Building Docker infrastructure" \
+  "Pulling base layers..." \
+  "Resolving dependencies..." \
+  "Compiling image filesystem..." \
+  "Applying patches..." \
+  "Optimising layer cache..."
 echo ""
 divider
 echo ""
@@ -305,14 +317,10 @@ echo ""
 
 DEPLOY_PID=$(bg_run "docker_deploy" sudo docker compose up -d)
 
-printf "  ${DIM}"
-typewriter "Stopping old containers..." 0.04
-printf "  ${DIM}"
-typewriter "Mounting volumes..." 0.035
-printf "  ${DIM}"
-typewriter "Starting new containers..." 0.04
-
-bg_wait "docker_deploy" "$DEPLOY_PID" "Starting updated containers"
+bg_wait "docker_deploy" "$DEPLOY_PID" "Starting updated containers" \
+  "Stopping old containers..." \
+  "Mounting volumes..." \
+  "Starting new containers..."
 echo ""
 divider
 echo ""
