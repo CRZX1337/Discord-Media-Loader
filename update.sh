@@ -1,34 +1,78 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# ══════════════════════════════════════════════════════════════════
+#  Fetchy — Update Utility
+#  Usage: ./update.sh [--force-rebuild] [--no-pull] [--prune] [-h]
+# ══════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
+#  FLAGS
+# ─────────────────────────────────────────────────────────────────
+OPT_FORCE_REBUILD=false
+OPT_NO_PULL=false
+OPT_PRUNE=false
+
+for arg in "$@"; do
+  case "$arg" in
+    --force-rebuild|-f) OPT_FORCE_REBUILD=true ;;
+    --no-pull)          OPT_NO_PULL=true        ;;
+    --prune|-p)         OPT_PRUNE=true          ;;
+    --help|-h)
+      echo ""
+      echo "  Usage: ./update.sh [options]"
+      echo ""
+      echo "  Options:"
+      echo "    --force-rebuild, -f   Rebuild Docker image without cache"
+      echo "    --no-pull             Skip git pull (deploy current code)"
+      echo "    --prune,         -p   Remove dangling images after build"
+      echo "    --help,          -h   Show this help message"
+      echo ""
+      exit 0
+      ;;
+    *)
+      echo "  Unknown option: $arg  (try --help)" >&2
+      exit 1
+      ;;
+  esac
+done
+
+# ─────────────────────────────────────────────────────────────────
 #  COLORS & STYLES
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 RESET="\033[0m"
 BOLD="\033[1m"
 DIM="\033[2m"
-
 RED="\033[0;31m"
 GREEN="\033[0;32m"
-YELLOW="\033[0;33m"
-CYAN="\033[0;36m"
-BRIGHT_WHITE="\033[1;37m"
-BRIGHT_CYAN="\033[1;36m"
-BRIGHT_GREEN="\033[1;32m"
-BRIGHT_YELLOW="\033[1;33m"
+YELLOW="\033[1;33m"
+CYAN="\033[1;36m"
+WHITE="\033[1;37m"
 
 c() { printf "\033[38;5;%dm" "$1"; }
 
 TERM_WIDTH=$(tput cols 2>/dev/null || echo 80)
 
-# ─────────────────────────────────────────────
-#  ANIMATION HELPERS
-# ─────────────────────────────────────────────
-# typewriter: prints plain text char-by-char.
-# NEVER pass color variables inside the text argument —
-# set colors BEFORE calling and reset AFTER.
+# ─────────────────────────────────────────────────────────────────
+#  PRINT HELPERS
+# ─────────────────────────────────────────────────────────────────
+divider() {
+  local width=$(( TERM_WIDTH < 64 ? TERM_WIDTH - 4 : 60 ))
+  echo -e "  ${DIM}$(printf '%*s' "$width" '' | tr ' ' '─')${RESET}"
+}
+
+step_ok()   { echo -e "  ${GREEN}✔${RESET}  ${BOLD}$1${RESET}"; }
+step_fail() { echo -e "  ${RED}✘${RESET}  ${BOLD}$1${RESET}"; }
+step_warn() { echo -e "  ${YELLOW}⚠${RESET}  ${DIM}$1${RESET}"; }
+step_info() { echo -e "  $(c 39)ℹ${RESET}  ${DIM}$1${RESET}"; }
+
+section() {
+  local num="$1" label="$2"
+  echo -e "  ${BOLD}$(c 39)[${num}]${RESET}  ${WHITE}${label}${RESET}"
+  echo ""
+}
+
 typewriter() {
-  local text="$1" delay="${2:-0.03}" i
+  local text="$1" delay="${2:-0.028}" i
   for (( i=0; i<${#text}; i++ )); do
     printf '%s' "${text:$i:1}"
     sleep "$delay"
@@ -36,183 +80,81 @@ typewriter() {
   echo
 }
 
-progress_bar() {
-  local label="$1" width=36 i
-  for (( i=0; i<=width; i++ )); do
-    local pct=$(( i * 100 / width ))
-    local filled=$(printf '%*s' "$i" '' | tr ' ' '█')
-    local empty=$(printf '%*s' "$(( width - i ))" '' | tr ' ' '░')
-    printf "\r  ${BRIGHT_CYAN}%s${DIM}%s${RESET}  ${BOLD}%3d%%${RESET}  ${DIM}%s${RESET}" \
-      "$filled" "$empty" "$pct" "$label"
-    sleep 0.018
-  done
-  echo
-}
-
-divider() {
-  local width=$(( TERM_WIDTH < 60 ? TERM_WIDTH - 4 : 56 ))
-  echo -e "  ${DIM}$(printf '%*s' "$width" '' | tr ' ' '─')${RESET}"
-}
-
-step_ok()   { echo -e "  ${BRIGHT_GREEN}✔${RESET}  ${BOLD}$1${RESET}"; }
-step_fail() { echo -e "  ${RED}✘${RESET}  ${BOLD}$1${RESET}"; }
-step_info() { echo -e "  $(c 39)ℹ${RESET}  ${DIM}$1${RESET}"; }
-
-require_command() {
-  command -v "$1" >/dev/null 2>&1 || { step_fail "Required: $1 not found"; exit 1; }
-}
-
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 #  SPINNER
-# ─────────────────────────────────────────────
-SPINNER_PID=""
-SPINNER_FRAMES=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+# ─────────────────────────────────────────────────────────────────
+_SPINNER_PID=""
+_SPINNER_FRAMES=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
 
 spinner_start() {
   local label="$1"
   (
     local i=0
+    local cols=("\033[1;36m" "\033[1;34m" "\033[1;35m" "\033[1;36m")
     while true; do
-      local colors=("\033[1;36m" "\033[1;34m" "\033[1;35m" "\033[1;36m")
-      printf "\r  ${colors[$(( i % 4 ))]}${SPINNER_FRAMES[$((i % 10))]}${RESET}  %s..." "$label" 2>/dev/null
-      i=$(( i + 1 ))
-      sleep 0.07
+      printf "\r  ${cols[$(( i % 4 ))]}${_SPINNER_FRAMES[$(( i % 10 ))]}${RESET}  %s" "$label" 2>/dev/null
+      (( i++ )) || true
+      sleep 0.08
     done
   ) &
-  SPINNER_PID=$!
+  _SPINNER_PID=$!
 }
 
 spinner_stop() {
-  [[ -n "$SPINNER_PID" ]] || return 0
-  kill "$SPINNER_PID" 2>/dev/null
-  wait "$SPINNER_PID" 2>/dev/null || true
-  SPINNER_PID=""
-  printf '%b' "\r\033[2K"
+  [[ -n "$_SPINNER_PID" ]] || return 0
+  kill "$_SPINNER_PID" 2>/dev/null || true
+  wait "$_SPINNER_PID" 2>/dev/null || true
+  _SPINNER_PID=""
+  printf '\r\033[2K'
 }
 
-# ─────────────────────────────────────────────
-#  BACKGROUND RUNNER
-# ─────────────────────────────────────────────
-BG_LOG="/tmp/fetchy_bg_$$.log"
-BG_STATUS="/tmp/fetchy_status_$$"
-mkdir -p "$BG_STATUS"
-
-bg_run() {
-  local name="$1"; shift
-  (
-    if "$@" >> "$BG_LOG" 2>&1; then
-      touch "${BG_STATUS}/${name}.ok"
-    else
-      echo "$?" > "${BG_STATUS}/${name}.fail"
-    fi
-  ) &
-  echo $!
-}
-
-bg_wait() {
-  local name="$1" pid="$2" label="$3"
-  shift 3
-  local activities=("$@")
+# ─────────────────────────────────────────────────────────────────
+#  TASK RUNNER  — runs a command, shows spinner, reports result
+#  run_task <label> <logfile> <cmd...>
+# ─────────────────────────────────────────────────────────────────
+run_task() {
+  local label="$1" logfile="$2"; shift 2
 
   spinner_start "$label"
 
-  # Play typewriter activities while spinner runs in background
-  for activity in "${activities[@]}"; do
-    [[ -z "$activity" ]] && continue
-    # Only animate if job is still running
-    if kill -0 "$pid" 2>/dev/null; then
-      printf "  ${DIM}"
-      typewriter "$activity" 0.03
-      printf "${RESET}"
-    fi
-  done
+  local exit_code=0
+  "$@" >"$logfile" 2>&1 || exit_code=$?
 
-  # Block until background job is actually done
-  wait "$pid" 2>/dev/null || true
   spinner_stop
 
-  if [[ -f "${BG_STATUS}/${name}.fail" ]]; then
+  if [[ $exit_code -ne 0 ]]; then
     step_fail "$label"
-    echo -e "\n${RED}${BOLD}  Error output:${RESET}"
-    sed 's/^/    /' "$BG_LOG" >&2
-    exit 1
+    echo ""
+    echo -e "  ${RED}${BOLD}── Error output ─────────────────────────────────${RESET}"
+    sed 's/^/    /' "$logfile" >&2
+    echo -e "  ${RED}${BOLD}─────────────────────────────────────────────────${RESET}"
+    echo ""
+    return $exit_code
   fi
+
   step_ok "$label"
 }
 
-# ─────────────────────────────────────────────
-#  CHANGELOG DISPLAY
-# ─────────────────────────────────────────────
-show_changelog() {
-  local before_sha="$1"
-  local after_sha
-  after_sha=$(git rev-parse HEAD)
+# ─────────────────────────────────────────────────────────────────
+#  CLEANUP
+# ─────────────────────────────────────────────────────────────────
+_TMPDIR=""
 
-  if [[ "$before_sha" == "$after_sha" ]]; then
-    echo -e "  ${DIM}Already up to date — no new commits.${RESET}"
-    echo ""
-    return
-  fi
-
-  local commits
-  commits=$(git log --pretty=format:"%h|⁠%s" "${before_sha}..${after_sha}" 2>/dev/null || true)
-
-  if [[ -z "$commits" ]]; then
-    echo -e "  ${DIM}No commit details available.${RESET}"
-    echo ""
-    return
-  fi
-
-  local count
-  count=$(echo "$commits" | wc -l | tr -d ' ')
-
-  echo -e "  ${BOLD}$(c 39)ℹ${RESET}  ${BOLD}${count} new commit$([ "$count" -ne 1 ] && echo 's' || true) pulled:${RESET}"
-  echo ""
-
-  while IFS='|' read -r hash subject; do
-    subject="${subject//$'\u2060'/}"
-    local icon color
-    case "$subject" in
-      feat*|feature*)    icon="✨" ; color="$(c 84)"  ;;
-      fix*|bugfix*)      icon="🐛" ; color="$(c 203)" ;;
-      docs*)             icon="📖" ; color="$(c 75)"  ;;
-      refactor*)         icon="♻️ " ; color="$(c 141)" ;;
-      perf*)             icon="⚡" ; color="$(c 214)" ;;
-      chore*|ci*|build*) icon="🔧" ; color="$(c 245)" ;;
-      test*)             icon="🧪" ; color="$(c 111)" ;;
-      style*)            icon="🎨" ; color="$(c 219)" ;;
-      revert*)           icon="⏪" ; color="$(c 196)" ;;
-      *)                 icon="▸"  ; color="$(c 252)" ;;
-    esac
-
-    local max_len=$(( TERM_WIDTH - 18 ))
-    if (( ${#subject} > max_len )); then
-      subject="${subject:0:$max_len}…"
-    fi
-
-    printf "  ${DIM}%s${RESET}  %s ${color}%s${RESET}\n" \
-      "$hash" "$icon" "$subject"
-    sleep 0.05
-  done <<< "$commits"
-
-  echo ""
-}
-
-# ─────────────────────────────────────────────
-#  CLEANUP ON EXIT
-# ─────────────────────────────────────────────
 cleanup() {
   spinner_stop
-  rm -f "$BG_LOG"
-  rm -rf "$BG_STATUS"
+  [[ -n "$_TMPDIR" ]] && rm -rf "$_TMPDIR"
 }
-trap 'cleanup; echo -e "\n${RED}${BOLD}  ✘ Update aborted (line $LINENO).${RESET}\n" >&2' ERR
+
+trap 'cleanup; echo -e "\n${RED}${BOLD}  ✘  Update aborted — check errors above.${RESET}\n" >&2' ERR
 trap 'cleanup' EXIT
 
-# ─────────────────────────────────────────────
-#  ANIMATED BANNER
-# ─────────────────────────────────────────────
+_TMPDIR=$(mktemp -d)
+
+# ─────────────────────────────────────────────────────────────────
+#  BANNER
+# ─────────────────────────────────────────────────────────────────
 clear
+
 BANNER_COLORS=(51 45 39 33 27 21)
 BANNER_LINES=(
   "  ███████╗███████╗████████╗ ██████╗██╗  ██╗██╗   ██╗"
@@ -226,141 +168,243 @@ BANNER_LINES=(
 echo ""
 for i in "${!BANNER_LINES[@]}"; do
   printf "$(c ${BANNER_COLORS[$i]})${BOLD}%s${RESET}\n" "${BANNER_LINES[$i]}"
-  sleep 0.06
+  sleep 0.055
 done
+
 echo ""
 printf "  ${DIM}"
-typewriter "Your Elite Personal Media Assistant" 0.025
+typewriter "Your Elite Personal Media Assistant" 0.022
 printf "  ${DIM}"
-typewriter "── System Update Utility ──" 0.03
+typewriter "── System Update Utility ──" 0.028
 printf "${RESET}"
 echo ""
 divider
 echo ""
 
-# ─────────────────────────────────────────────
-#  [1/4]  PRE-FLIGHT
-# ─────────────────────────────────────────────
-echo -e "  ${BOLD}$(c 39)[1/4]${RESET}  ${BRIGHT_WHITE}Pre-flight Checks${RESET}"
-echo ""
+# ─────────────────────────────────────────────────────────────────
+#  [1/4]  PRE-FLIGHT CHECKS
+# ─────────────────────────────────────────────────────────────────
+TOTAL_STEPS=4
+$OPT_NO_PULL && TOTAL_STEPS=3
 
-require_command git
-step_ok "git found"
-require_command docker
-step_ok "docker found"
+section "1/${TOTAL_STEPS}" "Pre-flight Checks"
 
-if [ ! -f "docker-compose.yml" ]; then
+# git
+if ! command -v git &>/dev/null; then
+  step_fail "git not found — please install git"
+  exit 1
+fi
+step_ok "git $(git --version | awk '{print $3}')"
+
+# docker
+if ! command -v docker &>/dev/null; then
+  step_fail "docker not found — please install Docker"
+  exit 1
+fi
+step_ok "docker $(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1)"
+
+# Detect: prefer 'docker compose' (v2 plugin), fall back to 'docker-compose'
+if docker compose version &>/dev/null 2>&1; then
+  DOCKER_COMPOSE="docker compose"
+elif command -v docker-compose &>/dev/null; then
+  DOCKER_COMPOSE="docker-compose"
+else
+  step_fail "Neither 'docker compose' nor 'docker-compose' found"
+  exit 1
+fi
+step_ok "compose engine: ${BOLD}${DOCKER_COMPOSE}${RESET}"
+
+# Detect sudo need
+if [[ $EUID -ne 0 ]] && ! docker info &>/dev/null 2>&1; then
+  SUDO="sudo"
+  step_info "Non-root user — will use sudo for Docker commands"
+else
+  SUDO=""
+fi
+
+# Project root guard
+if [[ ! -f "docker-compose.yml" ]]; then
   step_fail "docker-compose.yml not found — run from the Fetchy project root"
   exit 1
 fi
-step_ok "docker-compose.yml found"
+step_ok "docker-compose.yml present"
 
+# .env guard
+if [[ ! -f ".env" ]]; then
+  step_warn ".env file missing"
+  if [[ -f ".env.example" ]]; then
+    echo ""
+    echo -e "  ${YELLOW}${BOLD}  First-time setup detected!${RESET}"
+    echo -e "  ${DIM}  Copying .env.example → .env${RESET}"
+    cp .env.example .env
+    echo ""
+    echo -e "  ${YELLOW}${BOLD}  ⚠  Action required:${RESET}"
+    echo -e "  ${DIM}  Edit ${BOLD}.env${RESET}${DIM} and fill in your DISCORD_BOT_TOKEN and other values${RESET}"
+    echo -e "  ${DIM}  Then re-run this script.${RESET}"
+    echo ""
+    exit 0
+  else
+    step_fail ".env missing and no .env.example found — cannot continue"
+    exit 1
+  fi
+fi
+step_ok ".env file present"
+
+# Version info
 CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse --short HEAD)
 BEFORE_SHA=$(git rev-parse HEAD)
 step_info "Current version: ${BOLD}${CURRENT_VERSION}${RESET}"
 
+# Active flags summary
+FLAGS_ACTIVE=()
+$OPT_FORCE_REBUILD && FLAGS_ACTIVE+=("--force-rebuild")
+$OPT_NO_PULL       && FLAGS_ACTIVE+=("--no-pull")
+$OPT_PRUNE         && FLAGS_ACTIVE+=("--prune")
+if [[ ${#FLAGS_ACTIVE[@]} -gt 0 ]]; then
+  step_info "Flags active: ${BOLD}${FLAGS_ACTIVE[*]}${RESET}"
+fi
+
 echo ""
 divider
 echo ""
 
-# ─────────────────────────────────────────────
-#  [2/4]  GIT PULL
-# ─────────────────────────────────────────────
-echo -e "  ${BOLD}$(c 39)[2/4]${RESET}  ${BRIGHT_WHITE}Pulling Latest Changes${RESET}"
-echo ""
+# ─────────────────────────────────────────────────────────────────
+#  [2/N]  GIT PULL  (skip if --no-pull)
+# ─────────────────────────────────────────────────────────────────
+STEP=2
+if ! $OPT_NO_PULL; then
+  section "${STEP}/${TOTAL_STEPS}" "Pulling Latest Changes"
 
-GIT_PID=$(bg_run "git_pull" git pull --ff-only)
+  GIT_LOG="${_TMPDIR}/git_pull.log"
+  run_task "Syncing with remote repository" "$GIT_LOG" \
+    git pull --ff-only
 
-bg_wait "git_pull" "$GIT_PID" "Syncing with remote repository" \
-  "Contacting remote repository..." \
-  "Checking for new commits..." \
-  "Verifying integrity..."
-echo ""
+  # ── Changelog ──────────────────────────────────────────────────
+  AFTER_SHA=$(git rev-parse HEAD)
+  if [[ "$BEFORE_SHA" == "$AFTER_SHA" ]]; then
+    step_info "Already up to date — no new commits"
+  else
+    COMMITS=$(git log --pretty=format:"%h|%s" "${BEFORE_SHA}..${AFTER_SHA}" 2>/dev/null || true)
+    COUNT=$(echo "$COMMITS" | grep -c . || true)
 
-show_changelog "$BEFORE_SHA"
+    echo ""
+    echo -e "  $(c 39)${BOLD}ℹ${RESET}  ${BOLD}${COUNT} new commit$([ "$COUNT" -ne 1 ] && echo 's' || true) pulled:${RESET}"
+    echo ""
 
-divider
-echo ""
+    MAX_LEN=$(( TERM_WIDTH - 18 ))
+    while IFS='|' read -r hash subject; do
+      local icon color
+      case "$subject" in
+        feat*|feature*)    icon="✨"; color="$(c 84)"  ;;
+        fix*|bugfix*)      icon="🐛"; color="$(c 203)" ;;
+        docs*)             icon="📖"; color="$(c 75)"  ;;
+        refactor*)         icon="♻️ "; color="$(c 141)" ;;
+        perf*)             icon="⚡"; color="$(c 214)" ;;
+        chore*|ci*|build*) icon="🔧"; color="$(c 245)" ;;
+        test*)             icon="🧪"; color="$(c 111)" ;;
+        style*)            icon="🎨"; color="$(c 219)" ;;
+        revert*)           icon="⏪"; color="$(c 196)" ;;
+        *)                 icon="▸";  color="$(c 252)" ;;
+      esac
+      (( ${#subject} > MAX_LEN )) && subject="${subject:0:$MAX_LEN}…"
+      printf "  ${DIM}%s${RESET}  %s ${color}%s${RESET}\n" "$hash" "$icon" "$subject"
+      sleep 0.04
+    done <<< "$COMMITS"
+  fi
+  echo ""
+  divider
+  echo ""
+  (( STEP++ ))
+fi
 
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 #  [3/4]  DOCKER BUILD
-# ─────────────────────────────────────────────
-echo -e "  ${BOLD}$(c 39)[3/4]${RESET}  ${BRIGHT_WHITE}Rebuilding Docker Image${RESET}"
-echo ""
+# ─────────────────────────────────────────────────────────────────
+section "${STEP}/${TOTAL_STEPS}" "Rebuilding Docker Image"
 
-BUILD_PID=$(bg_run "docker_build" sudo docker compose build)
+BUILD_LOG="${_TMPDIR}/docker_build.log"
+BUILD_EXTRA_FLAGS=()
+$OPT_FORCE_REBUILD && BUILD_EXTRA_FLAGS+=("--no-cache")
 
-bg_wait "docker_build" "$BUILD_PID" "Building Docker infrastructure" \
-  "Pulling base layers..." \
-  "Resolving dependencies..." \
-  "Compiling image filesystem..." \
-  "Applying patches..." \
-  "Optimising layer cache..."
+run_task "Building Docker image${OPT_FORCE_REBUILD:+ (no cache)}" "$BUILD_LOG" \
+  $SUDO $DOCKER_COMPOSE build "${BUILD_EXTRA_FLAGS[@]}"
+
+if $OPT_PRUNE; then
+  PRUNE_LOG="${_TMPDIR}/docker_prune.log"
+  run_task "Pruning dangling images" "$PRUNE_LOG" \
+    $SUDO docker image prune -f
+fi
+
 echo ""
 divider
 echo ""
+(( STEP++ ))
 
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
 #  [4/4]  DOCKER DEPLOY
-# ─────────────────────────────────────────────
-echo -e "  ${BOLD}$(c 39)[4/4]${RESET}  ${BRIGHT_WHITE}Deploying Updated System${RESET}"
-echo ""
+# ─────────────────────────────────────────────────────────────────
+section "${STEP}/${TOTAL_STEPS}" "Deploying Updated System"
 
-DEPLOY_PID=$(bg_run "docker_deploy" sudo docker compose up -d)
+DEPLOY_LOG="${_TMPDIR}/docker_deploy.log"
+run_task "Starting updated containers" "$DEPLOY_LOG" \
+  $SUDO $DOCKER_COMPOSE up -d --remove-orphans
 
-bg_wait "docker_deploy" "$DEPLOY_PID" "Starting updated containers" \
-  "Stopping old containers..." \
-  "Mounting volumes..." \
-  "Starting new containers..."
 echo ""
 divider
 echo ""
 
-# ─────────────────────────────────────────────
-#  SUCCESS
-# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────
+#  SUCCESS SUMMARY
+# ─────────────────────────────────────────────────────────────────
 NEW_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse --short HEAD)
 
-progress_bar "Finalizing"
 echo ""
-
-# Colors OUTSIDE typewriter — typewriter only gets plain text
-printf "  ${BRIGHT_GREEN}${BOLD}"
-typewriter "✓  Fetchy successfully updated!"
-printf "${RESET}\n"
-
-sleep 0.1
-printf "  ${DIM}Updated to:${RESET}  ${BOLD}${BRIGHT_CYAN}"
-typewriter "$NEW_VERSION" 0.04
+printf "  ${GREEN}${BOLD}"
+typewriter "✓  Fetchy successfully updated!" 0.026
 printf "${RESET}"
-echo -e "  ${DIM}Status:${RESET}      ${BRIGHT_GREEN}${BOLD}● Running${RESET}"
-
 echo ""
+echo -e "  ${DIM}Version:${RESET}   ${BOLD}${CYAN}${NEW_VERSION}${RESET}"
+echo -e "  ${DIM}Status:${RESET}    ${GREEN}${BOLD}● Running${RESET}"
+echo ""
+
+# ── Container Status ───────────────────────────────────────────
+CONTAINER_STATUS=$($SUDO $DOCKER_COMPOSE ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || true)
+if [[ -n "$CONTAINER_STATUS" ]]; then
+  echo -e "  ${BOLD}$(c 39)Container Status:${RESET}"
+  echo ""
+  while IFS= read -r line; do
+    echo -e "    ${DIM}${line}${RESET}"
+  done <<< "$CONTAINER_STATUS"
+  echo ""
+fi
+
 divider
 echo ""
 
-# ─────────────────────────────────────────────
-#  LOG INFO
-# ─────────────────────────────────────────────
-echo -e "  ${BOLD}${BRIGHT_YELLOW}📋  How to view logs:${RESET}"
+# ─────────────────────────────────────────────────────────────────
+#  LOG COMMANDS
+# ─────────────────────────────────────────────────────────────────
+echo -e "  ${BOLD}${YELLOW}📋  Useful commands:${RESET}"
 echo ""
 
-_log_line() {
-  sleep 0.07
+_cmd_line() {
+  sleep 0.06
   echo -e "  $(c 81)$1${RESET}"
-  echo -e "      ${BOLD}$2${RESET}"
+  echo -e "    ${BOLD}$2${RESET}"
   echo ""
 }
 
-_log_line "Live logs (follow):"       "sudo docker compose logs -f"
-_log_line "Last 100 lines:"            "sudo docker compose logs --tail=100"
-_log_line "Specific service logs:"     "sudo docker compose logs -f fetchy"
-_log_line "Container status:"          "sudo docker compose ps"
+_cmd_line "Follow live logs:"              "$SUDO $DOCKER_COMPOSE logs -f"
+_cmd_line "Show last 100 lines:"           "$SUDO $DOCKER_COMPOSE logs --tail=100"
+_cmd_line "Restart the bot:"               "$SUDO $DOCKER_COMPOSE restart"
+_cmd_line "Stop everything:"               "$SUDO $DOCKER_COMPOSE down"
+_cmd_line "Force-rebuild without cache:"   "./update.sh --force-rebuild"
+_cmd_line "Prune dangling images too:"     "./update.sh --prune"
 
 divider
 echo ""
 printf "  ${DIM}Made with "
-printf "${RED}❤${RESET}${DIM} "
-typewriter "by CRZX1337  •  github.com/CRZX1337/Fetchy" 0.018
+printf "${RED}❤${RESET}${DIM}  "
+typewriter "by CRZX1337  •  github.com/CRZX1337/Fetchy" 0.016
 printf "${RESET}\n"
 echo ""
