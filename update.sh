@@ -7,43 +7,25 @@ set -Eeuo pipefail
 RESET="\033[0m"
 BOLD="\033[1m"
 DIM="\033[2m"
-ITALIC="\033[3m"
-UNDERLINE="\033[4m"
 
-BLACK="\033[0;30m"
 RED="\033[0;31m"
 GREEN="\033[0;32m"
 YELLOW="\033[0;33m"
-BLUE="\033[0;34m"
-MAGENTA="\033[0;35m"
 CYAN="\033[0;36m"
-WHITE="\033[0;37m"
 BRIGHT_WHITE="\033[1;37m"
 BRIGHT_CYAN="\033[1;36m"
-BRIGHT_BLUE="\033[1;34m"
 BRIGHT_GREEN="\033[1;32m"
-BRIGHT_MAGENTA="\033[1;35m"
 BRIGHT_YELLOW="\033[1;33m"
 
-# 256-color support for gradient effect
 c() { printf "\033[38;5;%dm" "$1"; }
 
-# ─────────────────────────────────────────────
-#  TERMINAL SIZE
-# ─────────────────────────────────────────────
 TERM_WIDTH=$(tput cols 2>/dev/null || echo 80)
-CENTER_OFFSET=$(( (TERM_WIDTH - 52) / 2 ))
-PAD=$(printf '%*s' "$CENTER_OFFSET" '')
 
 # ─────────────────────────────────────────────
 #  ANIMATION HELPERS
 # ─────────────────────────────────────────────
-
-# Typewriter effect
 typewriter() {
-  local text="$1"
-  local delay="${2:-0.03}"
-  local i
+  local text="$1" delay="${2:-0.03}" i
   for (( i=0; i<${#text}; i++ )); do
     printf '%s' "${text:$i:1}"
     sleep "$delay"
@@ -51,34 +33,34 @@ typewriter() {
   echo
 }
 
-# Animated progress bar
 progress_bar() {
-  local label="$1"
-  local width=36
-  local i
-  printf "  "
+  local label="$1" width=36 i
   for (( i=0; i<=width; i++ )); do
     local pct=$(( i * 100 / width ))
     local filled=$(printf '%*s' "$i" '' | tr ' ' '█')
     local empty=$(printf '%*s' "$(( width - i ))" '' | tr ' ' '░')
-    printf "\r  ${BRIGHT_CYAN}${filled}${DIM}${empty}${RESET}  ${BOLD}%3d%%${RESET}  ${DIM}%s${RESET}" \
-      "$pct" "$label"
+    printf "\r  ${BRIGHT_CYAN}%s${DIM}%s${RESET}  ${BOLD}%3d%%${RESET}  ${DIM}%s${RESET}" \
+      "$filled" "$empty" "$pct" "$label"
     sleep 0.018
   done
   echo
 }
 
-# Fade-in text (simulate by printing line with brief pause)
-fade_in() {
-  local text="$1"
-  echo -e "${DIM}${text}${RESET}"
-  sleep 0.04
-  printf "\033[1A\033[2K"
-  echo -e "${text}"
+divider() {
+  local width=$(( TERM_WIDTH < 60 ? TERM_WIDTH - 4 : 56 ))
+  echo -e "  ${DIM}$(printf '%*s' "$width" '' | tr ' ' '─')${RESET}"
+}
+
+step_ok()   { echo -e "  ${BRIGHT_GREEN}✔${RESET}  ${BOLD}$1${RESET}"; }
+step_fail() { echo -e "  ${RED}✘${RESET}  ${BOLD}$1${RESET}"; }
+step_info() { echo -e "  $(c 39)ℹ${RESET}  ${DIM}$1${RESET}"; }
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || { step_fail "Required: $1 not found"; exit 1; }
 }
 
 # ─────────────────────────────────────────────
-#  SPINNER
+#  SPINNER  (used while waiting for background jobs)
 # ─────────────────────────────────────────────
 SPINNER_PID=""
 SPINNER_FRAMES=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
@@ -88,10 +70,8 @@ spinner_start() {
   (
     local i=0
     while true; do
-      # Cycle spinner color through cyan→blue→magenta
       local colors=("\033[1;36m" "\033[1;34m" "\033[1;35m" "\033[1;36m")
-      local col="${colors[$(( i % 4 ))]}"
-      printf "\r  ${col}${SPINNER_FRAMES[$i % 10]}${RESET}  ${label}..." 2>/dev/null
+      printf "\r  ${colors[$(( i % 4 ))]}${SPINNER_FRAMES[$((i % 10))]}${RESET}  %s..." "$label" 2>/dev/null
       i=$(( i + 1 ))
       sleep 0.07
     done
@@ -100,62 +80,66 @@ spinner_start() {
 }
 
 spinner_stop() {
-  if [[ -n "$SPINNER_PID" ]]; then
-    kill "$SPINNER_PID" 2>/dev/null
-    wait "$SPINNER_PID" 2>/dev/null || true
-    SPINNER_PID=""
-    printf "\r\033[2K"
-  fi
+  [[ -n "$SPINNER_PID" ]] || return 0
+  kill "$SPINNER_PID" 2>/dev/null
+  wait "$SPINNER_PID" 2>/dev/null || true
+  SPINNER_PID=""
+  printf "\r\033[2K"
 }
 
 # ─────────────────────────────────────────────
-#  HELPERS
+#  BACKGROUND RUNNER
+#  Kicks off a command in background, returns its PID.
+#  Errors are written to a temp file.
 # ─────────────────────────────────────────────
-step_ok()   { echo -e "  ${BRIGHT_GREEN}✔${RESET}  ${BOLD}$1${RESET}"; sleep 0.05; }
-step_fail() { echo -e "  ${RED}✘${RESET}  ${BOLD}$1${RESET}"; }
-step_info() { echo -e "  $(c 39)ℹ${RESET}  ${DIM}$1${RESET}"; }
+BG_LOG="/tmp/fetchy_bg_$$.log"
+BG_STATUS="/tmp/fetchy_status_$$"   # directory — each job writes <name>.ok or <name>.fail
+mkdir -p "$BG_STATUS"
 
-divider() {
-  local width=$(( TERM_WIDTH < 60 ? TERM_WIDTH - 4 : 56 ))
-  local line=$(printf '%*s' "$width" '' | tr ' ' '─')
-  echo -e "  ${DIM}${line}${RESET}"
+bg_run() {
+  # bg_run <name> <cmd...>
+  local name="$1"; shift
+  (
+    if "$@" >> "$BG_LOG" 2>&1; then
+      touch "${BG_STATUS}/${name}.ok"
+    else
+      echo "$?" > "${BG_STATUS}/${name}.fail"
+    fi
+  ) &
+  echo $!   # return PID
 }
 
-require_command() {
-  command -v "$1" >/dev/null 2>&1 || {
-    spinner_stop
-    step_fail "Required command not found: ${BOLD}$1${RESET}"
-    exit 1
-  }
-}
-
-run_step() {
-  local label="$1"; shift
+# Wait for a background job to finish; spinner runs while waiting.
+# If the job fails, print error and exit 1.
+bg_wait() {
+  local name="$1" pid="$2" label="$3"
   spinner_start "$label"
-  if "$@" > /tmp/fetchy_update_log 2>&1; then
-    spinner_stop
-    step_ok "$label"
-  else
-    spinner_stop
+  wait "$pid" 2>/dev/null || true
+  spinner_stop
+  if [[ -f "${BG_STATUS}/${name}.fail" ]]; then
     step_fail "$label"
     echo -e "\n${RED}${BOLD}  Error output:${RESET}"
-    sed 's/^/    /' /tmp/fetchy_update_log >&2
+    sed 's/^/    /' "$BG_LOG" >&2
     exit 1
   fi
+  step_ok "$label"
 }
 
 # ─────────────────────────────────────────────
-#  TRAP
+#  CLEANUP ON EXIT
 # ─────────────────────────────────────────────
-trap 'spinner_stop; echo -e "\n${RED}${BOLD}  ✘ Update aborted (line $LINENO).${RESET}\n" >&2' ERR
+cleanup() {
+  spinner_stop
+  rm -f "$BG_LOG"
+  rm -rf "$BG_STATUS"
+}
+trap 'cleanup; echo -e "\n${RED}${BOLD}  ✘ Update aborted (line $LINENO).${RESET}\n" >&2' ERR
+trap 'cleanup' EXIT
 
 # ─────────────────────────────────────────────
-#  ANIMATED BANNER
+#  ANIMATED BANNER  (purely visual, no real work here)
 # ─────────────────────────────────────────────
 clear
-sleep 0.1
-
-# Gradient banner — each row shifts color from cyan→blue
 BANNER_COLORS=(51 45 39 33 27 21)
 BANNER_LINES=(
   "  ███████╗███████╗████████╗ ██████╗██╗  ██╗██╗   ██╗"
@@ -171,35 +155,28 @@ for i in "${!BANNER_LINES[@]}"; do
   printf "$(c ${BANNER_COLORS[$i]})${BOLD}%s${RESET}\n" "${BANNER_LINES[$i]}"
   sleep 0.06
 done
-
 echo ""
-sleep 0.1
-
-# Typewriter subtitle
 printf "  ${DIM}"
 typewriter "Your Elite Personal Media Assistant" 0.025
 printf "  ${DIM}"
 typewriter "── System Update Utility ──" 0.03
 echo ""
-
 divider
 echo ""
-sleep 0.15
 
 # ─────────────────────────────────────────────
-#  PRE-FLIGHT CHECKS
+#  [1/4]  PRE-FLIGHT  —  runs instantly, no background needed
 # ─────────────────────────────────────────────
 echo -e "  ${BOLD}$(c 39)[1/4]${RESET}  ${BRIGHT_WHITE}Pre-flight Checks${RESET}"
 echo ""
 
 require_command git
 step_ok "git found"
-
 require_command docker
 step_ok "docker found"
 
 if [ ! -f "docker-compose.yml" ]; then
-  step_fail "docker-compose.yml not found — run this from the Fetchy project root"
+  step_fail "docker-compose.yml not found — run from the Fetchy project root"
   exit 1
 fi
 step_ok "docker-compose.yml found"
@@ -210,69 +187,100 @@ step_info "Current version: ${BOLD}${CURRENT_VERSION}${RESET}"
 echo ""
 divider
 echo ""
-sleep 0.1
 
 # ─────────────────────────────────────────────
-#  GIT PULL
+#  [2/4]  GIT PULL  —  fire in background, animate, then wait
 # ─────────────────────────────────────────────
 echo -e "  ${BOLD}$(c 39)[2/4]${RESET}  ${BRIGHT_WHITE}Pulling Latest Changes${RESET}"
 echo ""
-run_step "Syncing with remote repository" git pull --ff-only
+
+# Kick off git pull immediately in the background
+GIT_PID=$(bg_run "git_pull" git pull --ff-only)
+
+# Animate while it runs (typewriter fakes activity)
+printf "  ${DIM}"
+typewriter "Contacting remote repository..." 0.03
+printf "  ${DIM}"
+typewriter "Checking for new commits..." 0.025
+printf "  ${DIM}"
+typewriter "Verifying integrity..." 0.03
+
+# Now block until git pull is actually done
+bg_wait "git_pull" "$GIT_PID" "Syncing with remote repository"
 echo ""
 divider
 echo ""
-sleep 0.1
 
 # ─────────────────────────────────────────────
-#  DOCKER BUILD
+#  [3/4]  DOCKER BUILD  —  longest step, fire first
 # ─────────────────────────────────────────────
 echo -e "  ${BOLD}$(c 39)[3/4]${RESET}  ${BRIGHT_WHITE}Rebuilding Docker Image${RESET}"
 echo ""
-run_step "Building Docker infrastructure" sudo docker compose build
+
+# Fire docker build immediately — it’s the slowest step
+BUILD_PID=$(bg_run "docker_build" sudo docker compose build)
+
+# Long fake animation while docker is crunching
+printf "  ${DIM}"
+typewriter "Pulling base layers..." 0.04
+printf "  ${DIM}"
+typewriter "Resolving dependencies..." 0.035
+printf "  ${DIM}"
+typewriter "Compiling image filesystem..." 0.03
+printf "  ${DIM}"
+typewriter "Applying patches..." 0.04
+printf "  ${DIM}"
+typewriter "Optimising layer cache..." 0.03
+
+# Wait for docker build to finish (spinner takes over if animation was faster)
+bg_wait "docker_build" "$BUILD_PID" "Building Docker infrastructure"
 echo ""
 divider
 echo ""
-sleep 0.1
 
 # ─────────────────────────────────────────────
-#  DOCKER DEPLOY
+#  [4/4]  DOCKER DEPLOY
 # ─────────────────────────────────────────────
 echo -e "  ${BOLD}$(c 39)[4/4]${RESET}  ${BRIGHT_WHITE}Deploying Updated System${RESET}"
 echo ""
-run_step "Starting updated containers" sudo docker compose up -d
+
+DEPLOY_PID=$(bg_run "docker_deploy" sudo docker compose up -d)
+
+printf "  ${DIM}"
+typewriter "Stopping old containers..." 0.04
+printf "  ${DIM}"
+typewriter "Mounting volumes..." 0.035
+printf "  ${DIM}"
+typewriter "Starting new containers..." 0.04
+
+bg_wait "docker_deploy" "$DEPLOY_PID" "Starting updated containers"
 echo ""
 divider
 echo ""
 
 # ─────────────────────────────────────────────
-#  ANIMATED SUCCESS
+#  SUCCESS
 # ─────────────────────────────────────────────
 NEW_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse --short HEAD)
 
-# Progress bar flourish
 progress_bar "Finalizing"
 echo ""
-sleep 0.1
 
-# Success message with typewriter
 printf "  ${BRIGHT_GREEN}${BOLD}"
 typewriter "✓  Fetchy successfully updated!" 0.04
 echo "${RESET}"
 
-# Animated status lines
 sleep 0.1
 printf "  ${DIM}Updated to:${RESET}  "
 typewriter "${BOLD}${BRIGHT_CYAN}${NEW_VERSION}${RESET}" 0.04
-sleep 0.05
 echo -e "  ${DIM}Status:${RESET}      ${BRIGHT_GREEN}${BOLD}● Running${RESET}"
 
 echo ""
 divider
 echo ""
-sleep 0.15
 
 # ─────────────────────────────────────────────
-#  LOG INFO  (fade in line by line)
+#  LOG INFO
 # ─────────────────────────────────────────────
 echo -e "  ${BOLD}${BRIGHT_YELLOW}📋  How to view logs:${RESET}"
 echo ""
@@ -284,10 +292,10 @@ _log_line() {
   echo ""
 }
 
-_log_line "Live logs (follow):"          "sudo docker compose logs -f"
-_log_line "Last 100 lines:"               "sudo docker compose logs --tail=100"
-_log_line "Specific service logs:"        "sudo docker compose logs -f fetchy"
-_log_line "Container status:"             "sudo docker compose ps"
+_log_line "Live logs (follow):"       "sudo docker compose logs -f"
+_log_line "Last 100 lines:"            "sudo docker compose logs --tail=100"
+_log_line "Specific service logs:"     "sudo docker compose logs -f fetchy"
+_log_line "Container status:"          "sudo docker compose ps"
 
 divider
 echo ""
