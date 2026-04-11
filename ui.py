@@ -61,6 +61,16 @@ def cleanup_stale_state(now: float) -> dict:
     }
 
 
+def _is_instagram_post(url: str) -> bool:
+    """Returns True for Instagram posts, carousels, reels and stories URLs."""
+    return any(p in url for p in (
+        "instagram.com/p/",
+        "instagram.com/reel/",
+        "instagram.com/reels/",
+        "instagram.com/stories/",
+    ))
+
+
 class SupportInformationEmbed(discord.Embed):
     """Custom embed for supported sites."""
     def __init__(self):
@@ -83,8 +93,8 @@ async def start_analysis(interaction: discord.Interaction, url: str, format_requ
         await interaction.edit_original_response(content="❌ Invalid URL! Please provide a valid http or https link.")
         return
 
-    # Early return for Instagram Carousels (must be before get_media_info)
-    if "instagram.com/p/" in url:
+    # Fix #1: Early return for all Instagram post types (posts, reels, stories)
+    if _is_instagram_post(url):
         entries = await asyncio.to_thread(downloader.get_instagram_carousel, url)
         if entries:
             view = InstagramCarouselView(url, entries, trigger_message_id, prompt_message_id)
@@ -282,7 +292,15 @@ class CancelView(discord.ui.View):
 async def process_action(interaction: discord.Interaction, url: str, format_type: str, quality: str = "1080", extension: str = None, trigger_message_id: int = None, prompt_message_id: int = None):
     """Global processor for the final download stage with rate limiting and status updates."""
     user_id = interaction.user.id
-    
+
+    # Fix #3: Cooldown check in process_action to prevent bypass via quality/format dropdowns
+    wait = check_cooldown(user_id)
+    if wait:
+        return await interaction.response.send_message(
+            f"⏳ Please wait **{wait}s** before starting a new download.",
+            ephemeral=True
+        )
+
     if active_downloads.get(user_id, 0) >= MAX_CONCURRENT_PER_USER:
         return await interaction.response.send_message(
             "⏳ **Whoa there!** You already have 2 active downloads. Please wait for one to finish! 🚦",
@@ -346,6 +364,16 @@ async def process_action(interaction: discord.Interaction, url: str, format_type
             embed.description = f"This file was too large for Discord (>10MB).\n[**Click here to Download**]({download_url})\n\n*(File expires in 1 hour)*"
             embed.color = discord.Color.green()
             await interaction.edit_original_response(embed=embed, view=None)
+            # Fix #4: Schedule large file deletion after token TTL (1 hour)
+            async def _delete_after_ttl(path: str, delay: float):
+                await asyncio.sleep(delay)
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                        logger.info(f"Deleted large file after TTL: {path}")
+                except Exception as ex:
+                    logger.warning(f"Could not delete large file {path}: {ex}")
+            asyncio.create_task(_delete_after_ttl(file_path, 3600))
         else:
             file = discord.File(file_path)
             await interaction.followup.send(content=f"✨ **Here is your {format_type}!** Enjoy!", file=file, ephemeral=True)
@@ -432,8 +460,9 @@ class DashboardView(discord.ui.View):
                 f"⏳ Please wait **{wait}s** before starting a new download.",
                 ephemeral=True
             )
-        _user_cooldowns[interaction.user.id] = time.time()
+        # Fix #2: Cooldown stamp moved to AFTER start_analysis — only set when download actually starts
         if self.url:
+            _user_cooldowns[interaction.user.id] = time.time()
             await start_analysis(interaction, self.url, "video", self.trigger_message_id, interaction.message.id)
         else:
             await interaction.response.send_modal(DownloadModal("video"))
@@ -446,8 +475,8 @@ class DashboardView(discord.ui.View):
                 f"⏳ Please wait **{wait}s** before starting a new download.",
                 ephemeral=True
             )
-        _user_cooldowns[interaction.user.id] = time.time()
         if self.url:
+            _user_cooldowns[interaction.user.id] = time.time()
             await start_analysis(interaction, self.url, "audio", self.trigger_message_id, interaction.message.id)
         else:
             await interaction.response.send_modal(DownloadModal("audio"))
@@ -460,8 +489,8 @@ class DashboardView(discord.ui.View):
                 f"⏳ Please wait **{wait}s** before starting a new download.",
                 ephemeral=True
             )
-        _user_cooldowns[interaction.user.id] = time.time()
         if self.url:
+            _user_cooldowns[interaction.user.id] = time.time()
             await start_analysis(interaction, self.url, "picture", self.trigger_message_id, interaction.message.id)
         else:
             await interaction.response.send_modal(DownloadModal("picture"))
