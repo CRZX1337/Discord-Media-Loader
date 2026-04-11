@@ -24,10 +24,13 @@ TERM_WIDTH=$(tput cols 2>/dev/null || echo 80)
 # ─────────────────────────────────────────────
 #  ANIMATION HELPERS
 # ─────────────────────────────────────────────
+# typewriter: prints plain text char-by-char.
+# NEVER pass color variables inside the text argument —
+# set colors BEFORE calling and reset AFTER.
 typewriter() {
   local text="$1" delay="${2:-0.03}" i
   for (( i=0; i<${#text}; i++ )); do
-    printf '%b' "${text:$i:1}"
+    printf '%s' "${text:$i:1}"
     sleep "$delay"
   done
   echo
@@ -110,29 +113,24 @@ bg_wait() {
   local name="$1" pid="$2" label="$3"
   shift 3
   local activities=("$@")
-  
+
   spinner_start "$label"
-  
+
   # Play typewriter activities while spinner runs in background
   for activity in "${activities[@]}"; do
-    if [[ -z "$activity" ]]; then
-      continue
+    [[ -z "$activity" ]] && continue
+    # Only animate if job is still running
+    if kill -0 "$pid" 2>/dev/null; then
+      printf "  ${DIM}"
+      typewriter "$activity" 0.03
+      printf "${RESET}"
     fi
-    printf "  ${DIM}"
-    typewriter "$activity" 0.03 &
-    local typewriter_pid=$!
-    
-    # Let typewriter play, but check if job finishes early
-    while kill -0 "$typewriter_pid" 2>/dev/null; do
-      sleep 0.05
-    done
-    wait "$typewriter_pid" 2>/dev/null || true
   done
-  
-  # Wait for background job to actually complete
+
+  # Block until background job is actually done
   wait "$pid" 2>/dev/null || true
   spinner_stop
-  
+
   if [[ -f "${BG_STATUS}/${name}.fail" ]]; then
     step_fail "$label"
     echo -e "\n${RED}${BOLD}  Error output:${RESET}"
@@ -144,8 +142,6 @@ bg_wait() {
 
 # ─────────────────────────────────────────────
 #  CHANGELOG DISPLAY
-#  Shows commits pulled since BEFORE_SHA.
-#  Categories derived from conventional commit prefixes.
 # ─────────────────────────────────────────────
 show_changelog() {
   local before_sha="$1"
@@ -158,7 +154,6 @@ show_changelog() {
     return
   fi
 
-  # Collect new commits: hash|subject
   local commits
   commits=$(git log --pretty=format:"%h|⁠%s" "${before_sha}..${after_sha}" 2>/dev/null || true)
 
@@ -175,24 +170,21 @@ show_changelog() {
   echo ""
 
   while IFS='|' read -r hash subject; do
-    # Strip zero-width joiner we used as delimiter guard
     subject="${subject//$'\u2060'/}"
     local icon color
-    # Assign icon + color by conventional commit prefix
     case "$subject" in
-      feat*|feature*)   icon="✨" ; color="$(c 84)"  ;;
-      fix*|bugfix*)     icon="🐛" ; color="$(c 203)" ;;
-      docs*)            icon="📖" ; color="$(c 75)"  ;;
-      refactor*)        icon="♻️ " ; color="$(c 141)" ;;
-      perf*)            icon="⚡" ; color="$(c 214)" ;;
-      chore*|ci*|build*)icon="🔧" ; color="$(c 245)" ;;
-      test*)            icon="🧪" ; color="$(c 111)" ;;
-      style*)           icon="🎨" ; color="$(c 219)" ;;
-      revert*)          icon="⏪" ; color="$(c 196)" ;;
-      *)                icon="▸"  ; color="$(c 252)" ;;
+      feat*|feature*)    icon="✨" ; color="$(c 84)"  ;;
+      fix*|bugfix*)      icon="🐛" ; color="$(c 203)" ;;
+      docs*)             icon="📖" ; color="$(c 75)"  ;;
+      refactor*)         icon="♻️ " ; color="$(c 141)" ;;
+      perf*)             icon="⚡" ; color="$(c 214)" ;;
+      chore*|ci*|build*) icon="🔧" ; color="$(c 245)" ;;
+      test*)             icon="🧪" ; color="$(c 111)" ;;
+      style*)            icon="🎨" ; color="$(c 219)" ;;
+      revert*)           icon="⏪" ; color="$(c 196)" ;;
+      *)                 icon="▸"  ; color="$(c 252)" ;;
     esac
 
-    # Truncate subject if too long
     local max_len=$(( TERM_WIDTH - 18 ))
     if (( ${#subject} > max_len )); then
       subject="${subject:0:$max_len}…"
@@ -241,6 +233,7 @@ printf "  ${DIM}"
 typewriter "Your Elite Personal Media Assistant" 0.025
 printf "  ${DIM}"
 typewriter "── System Update Utility ──" 0.03
+printf "${RESET}"
 echo ""
 divider
 echo ""
@@ -263,7 +256,6 @@ fi
 step_ok "docker-compose.yml found"
 
 CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse --short HEAD)
-# Save SHA BEFORE pull so we can diff later
 BEFORE_SHA=$(git rev-parse HEAD)
 step_info "Current version: ${BOLD}${CURRENT_VERSION}${RESET}"
 
@@ -285,7 +277,6 @@ bg_wait "git_pull" "$GIT_PID" "Syncing with remote repository" \
   "Verifying integrity..."
 echo ""
 
-# ——— CHANGELOG: show what just got pulled ———
 show_changelog "$BEFORE_SHA"
 
 divider
@@ -333,13 +324,15 @@ NEW_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse --shor
 progress_bar "Finalizing"
 echo ""
 
+# Colors OUTSIDE typewriter — typewriter only gets plain text
 printf "  ${BRIGHT_GREEN}${BOLD}"
-typewriter "✓  Fetchy successfully updated!" 0.04
-echo "${RESET}"
+typewriter "✓  Fetchy successfully updated!"
+printf "${RESET}\n"
 
 sleep 0.1
-printf "  ${DIM}Updated to:${RESET}  "
-typewriter "${BOLD}${BRIGHT_CYAN}${NEW_VERSION}${RESET}" 0.04
+printf "  ${DIM}Updated to:${RESET}  ${BOLD}${BRIGHT_CYAN}"
+typewriter "$NEW_VERSION" 0.04
+printf "${RESET}"
 echo -e "  ${DIM}Status:${RESET}      ${BRIGHT_GREEN}${BOLD}● Running${RESET}"
 
 echo ""
@@ -369,4 +362,5 @@ echo ""
 printf "  ${DIM}Made with "
 printf "${RED}❤${RESET}${DIM} "
 typewriter "by CRZX1337  •  github.com/CRZX1337/Fetchy" 0.018
+printf "${RESET}\n"
 echo ""
