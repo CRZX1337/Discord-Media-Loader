@@ -29,27 +29,14 @@ async def _handle_download(request: web.Request) -> web.Response:
     """Serve files only to callers that present a valid, unexpired token."""
     token = request.rel_url.query.get("token")
     if not token:
-        return web.Response(
-            status=403,
-            content_type="application/json",
-            text='{"error": "Missing token"}'
-        )
+        return web.Response(status=403, content_type="application/json", text='{"error": "Missing token"}')
     entry = file_server._file_tokens.get(token)
     if entry is None:
-        return web.Response(
-            status=403,
-            content_type="application/json",
-            text='{"error": "Invalid token"}'
-        )
+        return web.Response(status=403, content_type="application/json", text='{"error": "Invalid token"}')
     filepath, expiry = entry
     if time.time() > expiry:
         del file_server._file_tokens[token]
-        return web.Response(
-            status=403,
-            content_type="application/json",
-            text='{"error": "Token expired"}'
-        )
-    # Token stays alive for re-downloads within the 1 h window
+        return web.Response(status=403, content_type="application/json", text='{"error": "Token expired"}')
     return web.FileResponse(filepath)
 
 
@@ -63,6 +50,42 @@ async def start_server():
     await site.start()
     logger.info("Token-authenticated file server started on port 8080.")
 
+
+def build_dashboard_embed() -> discord.Embed:
+    """Returns the standard Fetchy dashboard embed."""
+    embed = discord.Embed(
+        title=f"📥 {BOT_NAME} — Media Downloader",
+        description="Your personal, private media assistant. Drop a link or pick a format below.",
+        color=discord.Color.blurple()
+    )
+    embed.add_field(
+        name="⚡ How to use",
+        value=(
+            "1️⃣ Paste a media link in this channel, **or**\n"
+            "2️⃣ Click a format button below and enter the URL manually."
+        ),
+        inline=False
+    )
+    embed.add_field(
+        name="🎯 Supported formats",
+        value="🎥 Video · 🎵 Audio · 🖼️ Picture",
+        inline=True
+    )
+    embed.add_field(
+        name="✨ Features",
+        value="Private · Large file support · Zero tracking",
+        inline=True
+    )
+    embed.add_field(
+        name="🖥️ Source",
+        value="[GitHub Repository](https://github.com/CRZX1337/Fetchy)",
+        inline=False
+    )
+    embed.set_thumbnail(url="https://raw.githubusercontent.com/CRZX1337/Fetchy/main/media/logo.png")
+    embed.set_footer(text="Handcrafted for efficiency · System fully operational")
+    return embed
+
+
 class MediaBot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
@@ -75,18 +98,20 @@ class MediaBot(commands.Bot):
             "Helping users fetch media! ✨",
             "Type a link to get started! 🔗"
         ]
+        # Fix #2: track whether we've already posted the dashboard this session
+        self._dashboard_posted = False
 
     async def setup_hook(self):
         self.add_view(DashboardView())
         self.status_rotation.start()
         self.cleanup_task.start()
         await start_server()
-        
+
         from cogs.general import General
         from cogs.admin import Admin
         await self.add_cog(General(self))
         await self.add_cog(Admin(self))
-        
+
         logger.info("Bot setup completed.")
 
     @tasks.loop(seconds=CONFIG.get("STATUS_ROTATION_SPEED", 10))
@@ -113,14 +138,12 @@ class MediaBot(commands.Bot):
         else:
             logger.info("Cleanup skipped: downloads/ is empty or does not exist.")
 
-        # Delegate ui state cleanup to ui module (FIX 7 — no internals exposed here)
         ui_summary = ui.cleanup_stale_state(time.time())
         logger.info(
             f"UI state cleanup: {ui_summary['cooldowns_cleared']} cooldowns, "
             f"{ui_summary['stale_downloads_cleared']} stale download counters cleared."
         )
 
-        # Clean up expired file tokens
         now = time.time()
         expired_tokens = [t for t, (_, exp) in file_server._file_tokens.items() if now > exp]
         for t in expired_tokens:
@@ -134,9 +157,14 @@ class MediaBot(commands.Bot):
     async def on_ready(self):
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
         logger.info(f"Targeting Channel ID: {CONFIG['CHANNEL_ID']}")
+
+        # Fix #2: Only post dashboard once per process lifetime, not on every reconnect
+        if self._dashboard_posted:
+            logger.info("on_ready fired again (reconnect) — skipping dashboard repost.")
+            return
+
         channel = self.get_channel(CONFIG["CHANNEL_ID"])
         if channel:
-            # FIX 5: check manage_messages before attempting purge
             if channel.permissions_for(channel.guild.me).manage_messages:
                 try:
                     await channel.purge(limit=100)
@@ -145,29 +173,21 @@ class MediaBot(commands.Bot):
             else:
                 logger.warning(
                     "Skipping startup purge: bot lacks 'Manage Messages' in "
-                    f"channel {channel.id}. Grant the permission and restart to enable this."
+                    f"channel {channel.id}."
                 )
-            embed = discord.Embed(
-                title=f"📥 {BOT_NAME} | Your Personal Media Assistant",
-                description="I am here to assist you with high-performance media extraction and management. Enjoy a fully private and anonymous experience across all your interactions.\n\nHow to get started:\n1. Select a format below (Video, Audio, or Picture).\n2. Provide the source link in the secure input field.\n3. Choose your quality/format and I'll handle the rest! 🚀\n\n\n✨ Key Benefits: High Performance - Large File Support - Zero Tracking\n\n🖥️ Source Code: [GitHub Repository](https://github.com/CRZX1337/Fetchy)",
-                color=discord.Color.blurple()
-            )
-            embed.set_thumbnail(url="https://raw.githubusercontent.com/CRZX1337/Fetchy/main/media/logo.png")
-            embed.set_footer(text="Handcrafted for efficiency - System fully operational")
-            await channel.send(embed=embed, view=DashboardView())
+            await channel.send(embed=build_dashboard_embed(), view=DashboardView())
+            self._dashboard_posted = True
             logger.info("Dashboard posted successfully.")
 
     async def on_message(self, message):
         if message.author == self.user:
             return
 
-        # Auto-detect media links in the designated channel
         if message.channel.id == CONFIG['CHANNEL_ID']:
             if re.search(CONFIG['LINK_REGEX'], message.content):
                 view = DashboardView(url=message.content, trigger_message_id=message.id)
                 await message.reply(
-                    f"Hello, {message.author.display_name}! I noticed you shared a media link.\n"
-                    "Would you like me to process that for you? Just pick a format below! 🚀",
+                    f"Hey {message.author.display_name}! I spotted a media link — pick a format to download it! 🚀",
                     view=view
                 )
 
@@ -179,11 +199,10 @@ class MediaBot(commands.Bot):
             return
         raise error
 
+
 # --- BOT ENTRYPOINT ---
 if __name__ == "__main__":
     load_dotenv()
-    # FIX 3: canonical env var is DISCORD_BOT_TOKEN.
-    # DISCORD_TOKEN is deprecated — warn users so they can migrate their .env.
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
         legacy_token = os.getenv("DISCORD_TOKEN")

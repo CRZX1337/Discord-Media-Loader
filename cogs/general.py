@@ -4,6 +4,13 @@ import yt_dlp as _ydl
 from ui import DashboardView
 from constants import BOT_NAME, VERSION
 
+
+def _get_dashboard_embed():
+    """Import lazily to avoid circular imports."""
+    from main import build_dashboard_embed
+    return build_dashboard_embed()
+
+
 class General(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -39,16 +46,33 @@ class General(commands.Cog):
 
     @commands.command(name="status")
     async def status_cmd(self, ctx):
+        import instaloader as _il
         ytdlp_version = _ydl.version.__version__
+        il_version = getattr(_il, '__version__', 'unknown')
         embed = discord.Embed(title=f"📊 {BOT_NAME} — Status", color=discord.Color.green())
         embed.add_field(name="🤖 Bot", value="Online ✅", inline=True)
         embed.add_field(name="📦 yt-dlp", value=f"`{ytdlp_version}`", inline=True)
-        embed.add_field(name="🐍 Version", value=f"{BOT_NAME} v{VERSION}", inline=True)
+        embed.add_field(name="📸 instaloader", value=f"`{il_version}`", inline=True)
+        embed.add_field(name="🐍 Version", value=f"{BOT_NAME} v{VERSION}", inline=False)
         await ctx.reply(embed=embed, mention_author=False)
 
     @commands.command(name="dashboard")
     async def dashboard_cmd(self, ctx):
-        await ctx.send(
-            content="Here is your permanent dashboard for media tasks!",
-            view=DashboardView()
-        )
+        # Fix #3: Delete the command message + purge old dashboards before posting fresh one
+        channel = ctx.channel
+        try:
+            await ctx.message.delete()
+        except Exception:
+            pass
+
+        if channel.permissions_for(channel.guild.me).manage_messages:
+            try:
+                await channel.purge(limit=50, check=lambda m: m.author == self.bot.user)
+            except Exception:
+                pass
+
+        await channel.send(embed=_get_dashboard_embed(), view=DashboardView())
+
+
+async def setup(bot):
+    await bot.add_cog(General(bot))
