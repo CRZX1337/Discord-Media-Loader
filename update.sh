@@ -27,7 +27,7 @@ TERM_WIDTH=$(tput cols 2>/dev/null || echo 80)
 typewriter() {
   local text="$1" delay="${2:-0.03}" i
   for (( i=0; i<${#text}; i++ )); do
-    printf '%s' "${text:$i:1}"
+    printf '%b' "${text:$i:1}"
     sleep "$delay"
   done
   echo
