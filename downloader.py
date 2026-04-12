@@ -182,19 +182,29 @@ def _apply_format(ydl_opts, url, format_type, quality, extension):
 
     elif format_type == "audio":
         ydl_opts['format'] = 'bestaudio/best'
-        ydl_opts['postprocessors'] = [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': extension,
-            'preferredquality': '192',
-        }]
+        ydl_opts['postprocessors'] = [{'key': 'FFmpegExtractAudio', 'preferredcodec': extension, 'preferredquality': '192'}]
 
     elif format_type == "picture":
         ydl_opts['writethumbnail'] = True
         ydl_opts['skip_download'] = True
-        ydl_opts['postprocessors'] = [{
-            'key': 'FFmpegThumbnailsConvertor',
-            'format': extension,
-        }]
+        ydl_opts['postprocessors'] = [{'key': 'FFmpegThumbnailsConvertor', 'format': extension}]
+
+
+def _apply_trim(ydl_opts, url, format_type, quality, extension, start_sec, end_sec):
+    """
+    Applies yt-dlp native download_ranges for trimming.
+    Called ONCE after _apply_format — never calls _apply_format again.
+    end_sec=None means download to the end of the media.
+    """
+    range_entry = {"start_time": start_sec if start_sec is not None else 0}
+    if end_sec is not None:
+        range_entry["end_time"] = end_sec
+    # No end_time key at all → yt-dlp downloads to the end (avoids float('inf') crash)
+
+    ydl_opts['download_ranges'] = yt_dlp.utils.download_range_func(None, [range_entry])
+    ydl_opts['force_keyframes_at_cuts'] = True
+
+    logger.info(f"Trim applied: start={start_sec}s end={end_sec}s")
 
 
 def _resolve_output(base, unique_id, format_type, extension):
@@ -276,6 +286,11 @@ def download_media(url, format_type, quality="1080", extension="mp3", status_hoo
     unique_id = str(uuid.uuid4())[:8]
     output_tpl = f'downloads/%(title)s_{unique_id}.%(ext)s'
 
+    # Parse trim timestamps once, outside the retry loop
+    start_sec = _parse_timestamp(start_time) if start_time else None
+    end_sec = _parse_timestamp(end_time) if end_time else None
+    needs_trim = (start_sec is not None or end_sec is not None) and format_type in ("audio", "video")
+
     last_error = None
     for attempt in range(1, _DOWNLOAD_RETRIES + 1):
         if cancel_event and cancel_event.is_set():
@@ -284,38 +299,8 @@ def download_media(url, format_type, quality="1080", extension="mp3", status_hoo
         ydl_opts = _build_ydl_opts(format_type, quality, extension, output_tpl, progress_handler)
         _apply_format(ydl_opts, url, format_type, quality, extension)
 
-        # Audio trim via FFmpeg postprocessor
-        if (start_time or end_time) and format_type in ("audio", "video"):
-            start_sec = _parse_timestamp(start_time) if start_time else None
-            end_sec = _parse_timestamp(end_time) if end_time else None
-            pp_args = []
-            if start_sec is not None:
-                pp_args += ["-ss", str(start_sec)]
-            if end_sec is not None:
-                if start_sec is not None:
-                    pp_args += ["-t", str(end_sec - start_sec)]
-                else:
-                    pp_args += ["-to", str(end_sec)]
-            if pp_args:
-                existing_pps = ydl_opts.get('postprocessors', [])
-                ydl_opts['postprocessors'] = existing_pps + [{
-                    'key': 'FFmpegPostProcessor',
-                    'preferedformat': extension if format_type == 'audio' else 'mp4',
-                    'args': pp_args,
-                }]
-                # For audio trim, use FFmpegExtractAudio with external time args
-                # Simpler: use download_ranges instead (yt-dlp native)
-                ydl_opts.pop('postprocessors', None)  # remove manual pp
-                ydl_opts['download_ranges'] = yt_dlp.utils.download_range_func(
-                    None,
-                    [{
-                        "start_time": start_sec if start_sec is not None else 0,
-                        "end_time": end_sec if end_sec is not None else float('inf'),
-                    }]
-                )
-                ydl_opts['force_keyframes_at_cuts'] = True
-                # Re-apply format postprocessors after clearing
-                _apply_format(ydl_opts, url, format_type, quality, extension)
+        if needs_trim:
+            _apply_trim(ydl_opts, url, format_type, quality, extension, start_sec, end_sec)
 
         try:
             if status_hook is not None and attempt == 1:
