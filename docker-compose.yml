@@ -9,6 +9,9 @@ services:
       - INSTAGRAM_USERNAME=${INSTAGRAM_USERNAME}
     ports:
       - "8080:8080"
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     volumes:
       # Save downloads persistently in a hosted folder (in case OS cleanup skips a beat)
       - ./downloads:/app/downloads
