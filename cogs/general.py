@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import yt_dlp as _ydl
 from ui import DashboardView
 from constants import BOT_NAME, VERSION
@@ -28,7 +29,8 @@ class General(commands.Cog):
             value=(
                 "`!help` — Show this overview\n"
                 "`!dashboard` — Re-post the download dashboard\n"
-                "`!status` — Show bot status and yt-dlp version"
+                "`!status` — Show bot status and yt-dlp version\n"
+                "`/ping` — Check bot latency"
             ),
             inline=False
         )
@@ -58,7 +60,6 @@ class General(commands.Cog):
 
     @commands.command(name="dashboard")
     async def dashboard_cmd(self, ctx):
-        # Fix #3: Delete the command message + purge old dashboards before posting fresh one
         channel = ctx.channel
         try:
             await ctx.message.delete()
@@ -72,6 +73,29 @@ class General(commands.Cog):
                 pass
 
         await channel.send(embed=_get_dashboard_embed(), view=DashboardView())
+
+    @app_commands.command(name="ping", description="Check bot latency and connection status")
+    async def ping(self, interaction: discord.Interaction):
+        latency_ms = round(self.bot.latency * 1000)
+
+        if latency_ms < 100:
+            color = discord.Color.green()
+            status = "🟢 Excellent"
+        elif latency_ms < 300:
+            color = discord.Color.yellow()
+            status = "🟡 Good"
+        else:
+            color = discord.Color.red()
+            status = "🔴 High"
+
+        embed = discord.Embed(
+            title="🏓 Pong!",
+            color=color
+        )
+        embed.add_field(name="WebSocket Latency", value=f"`{latency_ms}ms`", inline=True)
+        embed.add_field(name="Status", value=status, inline=True)
+        embed.set_footer(text=f"{BOT_NAME} v{VERSION}")
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 async def setup(bot):
