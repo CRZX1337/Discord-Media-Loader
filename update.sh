@@ -136,6 +136,29 @@ run_task() {
 }
 
 # ─────────────────────────────────────────────────────────────────
+#  CHANGELOG HELPER  — called inside a proper function so 'local' works
+# ─────────────────────────────────────────────────────────────────
+_print_commit_line() {
+  local hash="$1" subject="$2" max_len="$3"
+  local icon color
+  case "$subject" in
+    feat*|feature*)    icon="✨"; color="$(c 84)"  ;;
+    fix*|bugfix*)      icon="🐛"; color="$(c 203)" ;;
+    docs*)             icon="📖"; color="$(c 75)"  ;;
+    refactor*)         icon="♻️ "; color="$(c 141)" ;;
+    perf*)             icon="⚡"; color="$(c 214)" ;;
+    chore*|ci*|build*) icon="🔧"; color="$(c 245)" ;;
+    test*)             icon="🧪"; color="$(c 111)" ;;
+    style*)            icon="🎨"; color="$(c 219)" ;;
+    revert*)           icon="⏪"; color="$(c 196)" ;;
+    *)                 icon="▸";  color="$(c 252)" ;;
+  esac
+  (( ${#subject} > max_len )) && subject="${subject:0:$max_len}…"
+  printf "  ${DIM}%s${RESET}  %s ${color}%s${RESET}\n" "$hash" "$icon" "$subject"
+  sleep 0.04
+}
+
+# ─────────────────────────────────────────────────────────────────
 #  CLEANUP
 # ─────────────────────────────────────────────────────────────────
 _TMPDIR=""
@@ -293,22 +316,7 @@ if ! $OPT_NO_PULL; then
 
     MAX_LEN=$(( TERM_WIDTH - 18 ))
     while IFS='|' read -r hash subject; do
-      local icon color
-      case "$subject" in
-        feat*|feature*)    icon="✨"; color="$(c 84)"  ;;
-        fix*|bugfix*)      icon="🐛"; color="$(c 203)" ;;
-        docs*)             icon="📖"; color="$(c 75)"  ;;
-        refactor*)         icon="♻️ "; color="$(c 141)" ;;
-        perf*)             icon="⚡"; color="$(c 214)" ;;
-        chore*|ci*|build*) icon="🔧"; color="$(c 245)" ;;
-        test*)             icon="🧪"; color="$(c 111)" ;;
-        style*)            icon="🎨"; color="$(c 219)" ;;
-        revert*)           icon="⏪"; color="$(c 196)" ;;
-        *)                 icon="▸";  color="$(c 252)" ;;
-      esac
-      (( ${#subject} > MAX_LEN )) && subject="${subject:0:$MAX_LEN}…"
-      printf "  ${DIM}%s${RESET}  %s ${color}%s${RESET}\n" "$hash" "$icon" "$subject"
-      sleep 0.04
+      _print_commit_line "$hash" "$subject" "$MAX_LEN"
     done <<< "$COMMITS"
   fi
   echo ""
