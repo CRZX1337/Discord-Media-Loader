@@ -136,7 +136,7 @@ run_task() {
 }
 
 # ─────────────────────────────────────────────────────────────────
-#  CHANGELOG HELPER  — called inside a proper function so 'local' works
+#  CHANGELOG HELPER
 # ─────────────────────────────────────────────────────────────────
 _print_commit_line() {
   local hash="$1" subject="$2" max_len="$3"
@@ -212,21 +212,18 @@ $OPT_NO_PULL && TOTAL_STEPS=3
 
 section "1/${TOTAL_STEPS}" "Pre-flight Checks"
 
-# git
 if ! command -v git &>/dev/null; then
   step_fail "git not found — please install git"
   exit 1
 fi
 step_ok "git $(git --version | awk '{print $3}')"
 
-# docker
 if ! command -v docker &>/dev/null; then
   step_fail "docker not found — please install Docker"
   exit 1
 fi
 step_ok "docker $(docker --version | grep -oP '\d+\.\d+\.\d+' | head -1)"
 
-# Detect: prefer 'docker compose' (v2 plugin), fall back to 'docker-compose'
 if docker compose version &>/dev/null 2>&1; then
   DOCKER_COMPOSE="docker compose"
 elif command -v docker-compose &>/dev/null; then
@@ -237,7 +234,6 @@ else
 fi
 step_ok "compose engine: ${BOLD}${DOCKER_COMPOSE}${RESET}"
 
-# Detect sudo need
 if [[ $EUID -ne 0 ]] && ! docker info &>/dev/null 2>&1; then
   SUDO="sudo"
   step_info "Non-root user — will use sudo for Docker commands"
@@ -245,14 +241,12 @@ else
   SUDO=""
 fi
 
-# Project root guard
 if [[ ! -f "docker-compose.yml" ]]; then
   step_fail "docker-compose.yml not found — run from the Fetchy project root"
   exit 1
 fi
 step_ok "docker-compose.yml present"
 
-# .env guard
 if [[ ! -f ".env" ]]; then
   step_warn ".env file missing"
   if [[ -f ".env.example" ]]; then
@@ -273,12 +267,10 @@ if [[ ! -f ".env" ]]; then
 fi
 step_ok ".env file present"
 
-# Version info
 CURRENT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null || git rev-parse --short HEAD)
 BEFORE_SHA=$(git rev-parse HEAD)
 step_info "Current version: ${BOLD}${CURRENT_VERSION}${RESET}"
 
-# Active flags summary
 FLAGS_ACTIVE=()
 $OPT_FORCE_REBUILD && FLAGS_ACTIVE+=("--force-rebuild")
 $OPT_NO_PULL       && FLAGS_ACTIVE+=("--no-pull")
@@ -292,7 +284,7 @@ divider
 echo ""
 
 # ─────────────────────────────────────────────────────────────────
-#  [2/N]  GIT PULL  (skip if --no-pull)
+#  [2/N]  GIT PULL
 # ─────────────────────────────────────────────────────────────────
 STEP=2
 if ! $OPT_NO_PULL; then
@@ -302,7 +294,6 @@ if ! $OPT_NO_PULL; then
   run_task "Syncing with remote repository" "$GIT_LOG" \
     git pull --ff-only
 
-  # ── Changelog ──────────────────────────────────────────────────
   AFTER_SHA=$(git rev-parse HEAD)
   if [[ "$BEFORE_SHA" == "$AFTER_SHA" ]]; then
     step_info "Already up to date — no new commits"
@@ -332,9 +323,17 @@ section "${STEP}/${TOTAL_STEPS}" "Rebuilding Docker Image"
 
 BUILD_LOG="${_TMPDIR}/docker_build.log"
 BUILD_EXTRA_FLAGS=()
-$OPT_FORCE_REBUILD && BUILD_EXTRA_FLAGS+=("--no-cache")
 
-run_task "Building Docker image${OPT_FORCE_REBUILD:+ (no cache)}" "$BUILD_LOG" \
+# FIX: compare against the string "true", not use bash truthiness
+# "false" is a non-empty string so ${VAR:+text} always expanded before
+if [[ "$OPT_FORCE_REBUILD" == "true" ]]; then
+  BUILD_EXTRA_FLAGS+=("--no-cache")
+  BUILD_LABEL="Building Docker image (no cache)"
+else
+  BUILD_LABEL="Building Docker image"
+fi
+
+run_task "$BUILD_LABEL" "$BUILD_LOG" \
   $SUDO $DOCKER_COMPOSE build "${BUILD_EXTRA_FLAGS[@]}"
 
 if $OPT_PRUNE; then
@@ -375,7 +374,6 @@ echo -e "  ${DIM}Version:${RESET}   ${BOLD}${CYAN}${NEW_VERSION}${RESET}"
 echo -e "  ${DIM}Status:${RESET}    ${GREEN}${BOLD}● Running${RESET}"
 echo ""
 
-# ── Container Status ───────────────────────────────────────────
 CONTAINER_STATUS=$($SUDO $DOCKER_COMPOSE ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || true)
 if [[ -n "$CONTAINER_STATUS" ]]; then
   echo -e "  ${BOLD}$(c 39)Container Status:${RESET}"
@@ -389,9 +387,6 @@ fi
 divider
 echo ""
 
-# ─────────────────────────────────────────────────────────────────
-#  LOG COMMANDS
-# ─────────────────────────────────────────────────────────────────
 echo -e "  ${BOLD}${YELLOW}📋  Useful commands:${RESET}"
 echo ""
 
