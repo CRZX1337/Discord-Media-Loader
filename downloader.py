@@ -190,21 +190,19 @@ def _apply_format(ydl_opts, url, format_type, quality, extension):
         ydl_opts['postprocessors'] = [{'key': 'FFmpegThumbnailsConvertor', 'format': extension}]
 
 
-def _apply_trim(ydl_opts, url, format_type, quality, extension, start_sec, end_sec):
+def _apply_trim(ydl_opts, start_sec: float, end_sec: float | None):
     """
-    Applies yt-dlp native download_ranges for trimming.
-    Called ONCE after _apply_format — never calls _apply_format again.
-    end_sec=None means download to the end of the media.
+    Applies yt-dlp native trimming via download_range_func.
+    Uses the tuple API: [(start_float, end_float)] — the only stable API across yt-dlp versions.
+    If end_sec is None, uses a very large number to download to the end.
     """
-    range_entry = {"start_time": start_sec if start_sec is not None else 0}
-    if end_sec is not None:
-        range_entry["end_time"] = end_sec
-    # No end_time key at all → yt-dlp downloads to the end (avoids float('inf') crash)
+    start = float(start_sec) if start_sec is not None else 0.0
+    # Use a large sentinel instead of inf — yt-dlp compares end_time with numeric timestamps
+    end = float(end_sec) if end_sec is not None else 9999999.0
 
-    ydl_opts['download_ranges'] = yt_dlp.utils.download_range_func(None, [range_entry])
+    ydl_opts['download_ranges'] = yt_dlp.utils.download_range_func(None, [(start, end)])
     ydl_opts['force_keyframes_at_cuts'] = True
-
-    logger.info(f"Trim applied: start={start_sec}s end={end_sec}s")
+    logger.info(f"Trim applied: start={start}s end={end}s")
 
 
 def _resolve_output(base, unique_id, format_type, extension):
@@ -286,7 +284,7 @@ def download_media(url, format_type, quality="1080", extension="mp3", status_hoo
     unique_id = str(uuid.uuid4())[:8]
     output_tpl = f'downloads/%(title)s_{unique_id}.%(ext)s'
 
-    # Parse trim timestamps once, outside the retry loop
+    # Parse trim timestamps once outside the retry loop
     start_sec = _parse_timestamp(start_time) if start_time else None
     end_sec = _parse_timestamp(end_time) if end_time else None
     needs_trim = (start_sec is not None or end_sec is not None) and format_type in ("audio", "video")
@@ -300,7 +298,7 @@ def download_media(url, format_type, quality="1080", extension="mp3", status_hoo
         _apply_format(ydl_opts, url, format_type, quality, extension)
 
         if needs_trim:
-            _apply_trim(ydl_opts, url, format_type, quality, extension, start_sec, end_sec)
+            _apply_trim(ydl_opts, start_sec, end_sec)
 
         try:
             if status_hook is not None and attempt == 1:
